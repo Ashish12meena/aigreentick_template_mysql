@@ -84,3 +84,8 @@ cors:
     - "*"
   allow-credentials: true
   max-age-seconds: 3600
+
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful

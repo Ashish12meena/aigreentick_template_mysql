@@ -28,7 +28,9 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
 
-
+server:
+  port: ${SERVER_PORT:8020}
+  shutdown: graceful
 
 
 media-service:
