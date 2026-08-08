@@ -32,10 +32,10 @@ jobs:
             mvn clean install
 
             echo "Restarting service..."
-            systemctl restart java-aigreentick-template.service
+            systemctl restart java-apargo-template.service
 
             echo "Checking service status..."
             sleep 20
-            systemctl is-active java-aigreentick-template.service
+            systemctl is-active java-apargo-template.service
 
             echo "Deployment Successful!"
