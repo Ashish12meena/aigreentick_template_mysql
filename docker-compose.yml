@@ -1,0 +1,21 @@
+services:
+
+  template-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: template-service
+    ports:
+      - "8022:8021"
+    env_file:
+      - .env
+      
+    restart: unless-stopped
+
+
+    networks:
+      - apargo-network
+
+networks:
+  apargo-network:
+    external: true

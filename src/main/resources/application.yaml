@@ -1,0 +1,86 @@
+spring:
+  profiles:
+    active: dev
+  application:
+    name: template
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/apargo_wa_template}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:meenagaming12@#}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      fail-on-unknown-properties: false
+
+  # data:
+  #   web:
+  #     pageable:
+  #       serialization-mode: via-dto
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+
+facebook-service:
+  base-url: ${FACEBOOK_SERVICE_BASE_URL:https://graph.facebook.com}
+  api-version: ${FACEBOOK_API_VERSION:v23.0}
+
+
+media-service:
+  base-url: ${MEDIA_SERVICE_BASE_URL:http://146.88.24.113:8030}
+  batch:
+    max-bytes: 83886080
+    max-files: 20
+    upload-path: /api/v1/media/upload/batch
+  single:
+    upload-path: /api/v1/media/upload
+
+
+waba-service:
+  base-url: ${WABA_SERVICE_BASE_URL:http://146.88.24.113:8040}
+  connect-timeout: 5000
+  read-timeout: 10000
+  paths:
+    get-credentials: /internal/waba-accounts/{wabaAccountId}/credentials
+
+
+# Eureka
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://146.88.24.113:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+  allowed-methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  allowed-headers:
+    - "*"
+  allow-credentials: true
+  max-age-seconds: 3600
