@@ -1,9 +1,11 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://146.88.24.113:3306/apargo_wa_messaging}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:2024@Bajajsys}
+    url: ${DB_URL:jdbc:mysql://146.88.24.113:3306/apargo_wa_messaging}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:2024@Bajajsys}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 10
@@ -13,11 +15,6 @@ spring:
 
   jackson:
     property-naming-strategy: SNAKE_CASE
-
-  # data:
-  #   web:
-  #     pageable:
-  #       serialization-mode: via-dto
 
   jpa:
     hibernate:
@@ -32,16 +29,14 @@ server:
   port: ${SERVER_PORT:8020}
   shutdown: graceful
 
-
-media-service:
-  base-url: ${MEDIA_SERVICE_BASE_URL:http://146.88.24.113:8032}
+storage-service:
+  base-url: ${STORAGE_SERVICE_BASE_URL:http://146.88.24.113:8032}
   batch:
     max-bytes: 83886080
     max-files: 20
     upload-path: /api/v1/media/upload/batch
   single:
     upload-path: /api/v1/media/upload
-
 
 waba-service:
   base-url: ${WABA_SERVICE_BASE_URL:http://localhost:8040}
