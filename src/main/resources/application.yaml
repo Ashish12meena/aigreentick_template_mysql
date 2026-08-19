@@ -56,7 +56,7 @@ waba-service:
   connect-timeout: 5000
   read-timeout: 10000
   paths:
-    get-credentials: /internal/waba-accounts/{wabaAccountId}/credentials
+    get-credentials: /internal/v1/waba-credentials/by-waba/{wabaAccountId}
 
 
 # Eureka
