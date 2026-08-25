@@ -20,7 +20,7 @@
     </parent>
 
     <groupId>com.aigreentick.services</groupId>
-    <artifactId>template-service</artifactId>
+    <artifactId>template</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>template-service</name>
     <description>WhatsApp message template management service</description>
