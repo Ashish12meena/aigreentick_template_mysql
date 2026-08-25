@@ -21,7 +21,7 @@
 
     <groupId>com.aigreentick.services</groupId>
     <artifactId>template-service</artifactId>
-    <version>1.0.0</version>
+    <version>0.0.1-SNAPSHOT</version>
     <name>template-service</name>
     <description>WhatsApp message template management service</description>
 
