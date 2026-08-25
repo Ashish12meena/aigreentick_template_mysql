@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.response.TemplateDetailResponseDto;
+import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplateButton;
 import com.aigreentick.services.template.domain.model.WhatsappTemplateButtonSupportedApp;

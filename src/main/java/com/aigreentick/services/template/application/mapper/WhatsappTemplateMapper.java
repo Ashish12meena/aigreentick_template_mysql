@@ -6,15 +6,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.BaseTemplateRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateButtonRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateButtonSupportedAppRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouseCardComponentRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouselButtonRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouselCardRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateComponentRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateExampleRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateVariablesRequestDto;
+import com.aigreentick.services.template.api.request.BaseTemplateRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateButtonRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateButtonSupportedAppRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouseCardComponentRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouselButtonRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouselCardRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateComponentRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateExampleRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateVariablesRequestDto;
 import com.aigreentick.services.template.application.dto.command.CreateTemplateCommand;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;
 import com.aigreentick.services.template.domain.enums.CarouselButtonType;

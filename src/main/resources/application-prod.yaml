@@ -1,0 +1,95 @@
+# ============================================================================
+# Template Service - prod profile
+#
+# This file previously existed as application-prod.yml and was EMPTY, which
+# means production inherited every dev-shaped default - including
+# ddl-auto: update and a wildcard-capable CORS origin.
+#
+# Principle: no secret has a default here. A missing environment variable must
+# stop the deployment. A service that boots with a fallback credential is a
+# service that boots wrong and tells nobody.
+# ============================================================================
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      # Surfaces a connection that was borrowed and never returned. Without
+      # it a leak presents as the pool slowly exhausting with no attribution.
+      leak-detection-threshold: 20000
+
+  jpa:
+    hibernate:
+      # NEVER update in production. Hibernate would alter a live schema on
+      # boot - adding columns, and in some dialects dropping constraints -
+      # with no migration, no review and no rollback. validate fails startup
+      # on a mismatch instead, which is the correct outcome: a schema that
+      # does not match the code should stop a deployment, not be edited to fit.
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+server:
+  # Behind a load balancer or ingress. Without this, every client IP in the
+  # access log is the proxy's, and generated absolute URLs use the internal
+  # scheme and host.
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:200}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+
+internal:
+  api:
+    # No default. See the file header.
+    api-key: ${INTERNAL_API_KEY}
+    # Not overridable in production. Leaving this as an env binding invites
+    # someone to disable authentication on the internal surface by setting
+    # one variable.
+    auth-enabled: true
+
+cors:
+  # Explicit origins only. The base file's default is a localhost origin, but
+  # relying on a default here at all would mean a missing variable silently
+  # produces a permissive policy.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  allow-credentials: true
+
+eureka:
+  client:
+    enabled: true
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+
+# Public surface only. /internal/** is not published here - documentation
+# hygiene, not security: the gateway deny rule and InternalApiAuthFilter are
+# what keep outsiders out, and an endpoint absent from Swagger still answers.
+springdoc:
+  paths-to-match: /api/**
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      # Health detail names which upstream is failing. Useful to an operator,
+      # and a free dependency map to anyone else who can reach the endpoint.
+      show-details: never
+
+logging:
+  level:
+    root: WARN
+    com.aigreentick.services.template: ${LOG_LEVEL:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [trace=%X{traceId:-} org=%X{orgId:-} project=%X{projectId:-}] %logger{36} - %msg%n"

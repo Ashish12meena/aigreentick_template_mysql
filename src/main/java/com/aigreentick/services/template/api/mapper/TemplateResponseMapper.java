@@ -3,7 +3,7 @@ package com.aigreentick.services.template.api.mapper;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.response.TemplateResponseDto;
+import com.aigreentick.services.template.api.response.TemplateResponseDto;
 import com.aigreentick.services.template.application.dto.result.TemplateSummaryResult;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 

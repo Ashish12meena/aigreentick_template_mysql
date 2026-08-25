@@ -2,8 +2,8 @@ package com.aigreentick.services.template.api.mapper;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.CreateTemplateRequestDto;
-import com.aigreentick.services.template.api.dto.response.TemplateResponseDto;
+import com.aigreentick.services.template.api.request.CreateTemplateRequestDto;
+import com.aigreentick.services.template.api.response.TemplateResponseDto;
 import com.aigreentick.services.template.application.dto.command.CreateTemplateCommand;
 import com.aigreentick.services.template.application.dto.command.UpdateDraftTemplateCommand;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;

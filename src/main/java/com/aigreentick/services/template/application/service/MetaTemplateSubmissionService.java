@@ -4,8 +4,8 @@ import org.springframework.stereotype.Service;
 
 import com.aigreentick.services.template.application.dto.TenantScope;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;
-import com.aigreentick.services.template.api.dto.response.client.AccessTokenIdentifier;
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
+import com.aigreentick.services.template.application.dto.client.AccessTokenIdentifier;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
 import com.aigreentick.services.template.application.mapper.WhatsappTemplateMapper;
 import com.aigreentick.services.template.application.port.out.FacebookTemplatePort;
 import com.aigreentick.services.template.application.port.out.WabaCredentialPort;

@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.application.usecase;
 
+import com.aigreentick.services.template.infrastructure.config.MediaSyncThreadPoolConfig;
 import com.aigreentick.services.template.application.port.in.SyncTemplateFromFacebookUseCase;
 
 import java.util.ArrayList;
@@ -9,7 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -17,10 +18,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aigreentick.services.template.api.dto.request.sync.SyncTemplateRequest;
-import com.aigreentick.services.template.api.dto.response.TemplateSyncStats;
-import com.aigreentick.services.template.api.dto.response.client.AccessTokenIdentifier;
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
+import com.aigreentick.services.template.api.request.SyncTemplateRequest;
+import com.aigreentick.services.template.api.response.TemplateSyncStats;
+import com.aigreentick.services.template.application.dto.client.AccessTokenIdentifier;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
 import com.aigreentick.services.template.application.dto.TenantScope;
 import com.aigreentick.services.template.application.mapper.TemplateSyncMapper;
 import com.aigreentick.services.template.application.port.out.FacebookTemplateSyncPort;
@@ -57,7 +58,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
     private final TemplateCommandService commandService;
     private final TemplateSyncMapper syncMapper;
     private final MediaSyncService mediaSyncService;
-    private final ExecutorService mediaSyncExecutor;
+    private final Executor mediaSyncExecutor;
 
     public SyncTemplateFromFacebookUseCaseImpl(
             WabaCredentialPort accountClient,
@@ -67,7 +68,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
             TemplateCommandService commandService,
             TemplateSyncMapper syncMapper,
             MediaSyncService mediaSyncService,
-            @Qualifier("mediaSyncExecutor") ExecutorService mediaSyncExecutor) {
+            @Qualifier(MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR) Executor mediaSyncExecutor) {
 
         this.accountClient = accountClient;
         this.ftsp = ftsp;
@@ -109,7 +110,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
         try {
             // Phase 1: pure HTTP, no DB connection
             AccessTokenIdentifier credentials = accountClient
-                    .getWhatsappAccountWabaAccessToken(wabaId , new TenantScope(organizationId,projectId));
+                    .getWhatsappAccountWabaAccessToken(wabaId, new TenantScope(organizationId, projectId));
 
             List<SyncTemplateRequest> facebookTemplates = fetchAllTemplatesPaginated(
                     wabaId, credentials.getAccessToken());
@@ -386,9 +387,19 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
         return a.equals(b);
     }
 
-    private List<SyncTemplateRequest> parseFacebookResponse(JsonNode dataNode) {
+    private List<SyncTemplateRequest> parseFacebookResponse(JsonNode responseNode) {
         List<SyncTemplateRequest> parsed = new ArrayList<>();
         int skipped = 0;
+
+        // Meta wraps results: { "data": [ ... ], "paging": { ... } }.
+        // Iterating responseNode directly walks the wrapper's FIELD VALUES —
+        // the `data` array and the `paging` object — not the templates.
+        JsonNode dataNode = responseNode.path("data");
+        if (!dataNode.isArray()) {
+            log.warn("[SYNC] Expected 'data' array in Meta response, got {}",
+                    dataNode.getNodeType());
+            return parsed;
+        }
 
         for (JsonNode templateNode : dataNode) {
             try {
@@ -404,7 +415,6 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
             log.warn("[SYNC] Skipped {} of {} templates in this page due to parse failures",
                     skipped, dataNode.size());
         }
-
         return parsed;
     }
 }

@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.aigreentick.services.template.api.dto.request.create.BaseTemplateRequestDto;
+import com.aigreentick.services.template.api.request.BaseTemplateRequestDto;
 import com.aigreentick.services.template.common.exception.TemplateRuleViolationException;
 
 import lombok.RequiredArgsConstructor;

@@ -2,7 +2,7 @@ package com.aigreentick.services.template.application.port.in;
 
 import org.springframework.web.multipart.MultipartFile;
 
-import com.aigreentick.services.template.api.dto.response.media.ResumableMediaUploadResponseDto;
+import com.aigreentick.services.template.api.response.media.ResumableMediaUploadResponseDto;
 
 /**
  * Driving port: upload header media (image/video/document) to Meta ahead

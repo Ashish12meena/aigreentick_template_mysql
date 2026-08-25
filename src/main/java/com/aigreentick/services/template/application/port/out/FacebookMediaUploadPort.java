@@ -4,10 +4,10 @@ package com.aigreentick.services.template.application.port.out;
 import java.io.File;
 import java.io.IOException;
 
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadMediaResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadOffsetResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadSessionResponse;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
+import com.aigreentick.services.template.api.response.media.UploadMediaResponse;
+import com.aigreentick.services.template.api.response.media.UploadOffsetResponse;
+import com.aigreentick.services.template.api.response.media.UploadSessionResponse;
 
 public interface FacebookMediaUploadPort {
 

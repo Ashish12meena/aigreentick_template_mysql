@@ -1,6 +1,6 @@
 package com.aigreentick.services.template.application.port.in;
 
-import com.aigreentick.services.template.api.dto.response.TemplateSyncStats;
+import com.aigreentick.services.template.api.response.TemplateSyncStats;
 
 /**
  * Driving port: pull the latest template state from Meta for a given

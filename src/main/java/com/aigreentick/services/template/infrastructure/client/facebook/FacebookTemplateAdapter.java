@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -15,14 +16,15 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadMediaResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadOffsetResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadSessionResponse;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
+import com.aigreentick.services.template.api.response.media.UploadMediaResponse;
+import com.aigreentick.services.template.api.response.media.UploadOffsetResponse;
+import com.aigreentick.services.template.api.response.media.UploadSessionResponse;
 import com.aigreentick.services.template.application.port.out.FacebookMediaUploadPort;
 import com.aigreentick.services.template.application.port.out.FacebookTemplatePort;
 import com.aigreentick.services.template.application.port.out.FacebookTemplateSyncPort;
-import com.aigreentick.services.template.infrastructure.config.FacebookClientProperties;
+import com.aigreentick.services.template.infrastructure.config.WebClientConfig;
+import com.aigreentick.services.template.infrastructure.config.properties.FacebookClientProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import lombok.extern.slf4j.Slf4j;
@@ -36,12 +38,17 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
         private final FacebookClientProperties properties;
 
         /**
-         * Build WebClient once at construction time — reuse for all calls.
-         * WebClient is immutable and thread-safe after build().
+         * The client is built once, centrally, in {@link WebClientConfig} —
+         * this class receives it rather than assembling its own. That is what
+         * guarantees the Meta client gets its own timeouts and its raised
+         * codec buffer limit, and that it is <em>not</em> given the internal
+         * API key: Meta is outside the trust boundary.
          */
-        public FacebookTemplateAdapter(WebClient.Builder webClientBuilder, FacebookClientProperties properties) {
+        public FacebookTemplateAdapter(
+                        @Qualifier(WebClientConfig.FACEBOOK_WEB_CLIENT) WebClient webClient,
+                        FacebookClientProperties properties) {
                 this.properties = properties;
-                this.webClient = webClientBuilder.build();
+                this.webClient = webClient;
         }
 
         /**

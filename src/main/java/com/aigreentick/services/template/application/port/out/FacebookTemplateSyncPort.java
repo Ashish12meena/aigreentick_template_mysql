@@ -2,7 +2,7 @@ package com.aigreentick.services.template.application.port.out;
 
 import java.util.Optional;
 
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 
 public interface FacebookTemplateSyncPort {

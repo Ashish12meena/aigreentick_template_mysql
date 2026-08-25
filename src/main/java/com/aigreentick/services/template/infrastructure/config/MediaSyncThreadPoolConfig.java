@@ -1,61 +1,74 @@
 package com.aigreentick.services.template.infrastructure.config;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import com.aigreentick.services.template.infrastructure.config.properties.MediaSyncProperties;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import lombok.extern.slf4j.Slf4j;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * Dedicated thread pool for media download/upload during Facebook template sync.
+ * Dedicated thread pool for media download/upload during template sync.
  *
- * Why a separate pool:
- *   - Isolates blocking I/O (HTTP downloads from Facebook) from the rest of the app
- *   - Prevents thread starvation of Reactor's boundedElastic or servlet threads
- *   - Fixed size = predictable concurrency, no shared resource contention
- *   - Integrates with Spring lifecycle for clean shutdown
+ * <h2>Why a separate pool</h2>
+ *
+ * <ul>
+ *   <li>Isolates blocking HTTP I/O against Meta from servlet request threads
+ *       and from Reactor's {@code boundedElastic} scheduler. A slow Meta
+ *       response should delay a sync, not stall unrelated requests.</li>
+ *   <li>Fixed size gives predictable concurrency against Meta's rate
+ *       limits.</li>
+ *   <li>Named threads make a stack dump during a slow sync legible.</li>
+ * </ul>
+ *
+ * <h2>What changed</h2>
+ *
+ * The pool was a raw {@link ThreadPoolExecutor} with three hardcoded
+ * constants, registered with {@code destroyMethod = "shutdown"}.
+ * {@code shutdown()} returns immediately without waiting, so a redeploy
+ * could tear the JVM down with half-uploaded media still in flight —
+ * leaving templates pointing at URLs that were never written.
+ *
+ * <p>{@link ThreadPoolTaskExecutor} is Spring's own wrapper: it participates
+ * in the context lifecycle and, with
+ * {@code setWaitForTasksToCompleteOnShutdown(true)}, drains in-flight tasks
+ * up to a bounded grace period. Sizing now comes from
+ * {@link MediaSyncProperties}.
+ *
+ * <p>{@link ThreadPoolExecutor.CallerRunsPolicy} is retained deliberately.
+ * When the bounded queue is full the submitting thread runs the task itself,
+ * which throttles the producer instead of discarding work — for a sync,
+ * slower is correct and silently dropping media is not.
  */
-@Configuration
 @Slf4j
+@Configuration
+@RequiredArgsConstructor
 public class MediaSyncThreadPoolConfig {
 
-    private static final int POOL_SIZE = 15;
-    private static final int QUEUE_CAPACITY = 100;
-    private static final long KEEP_ALIVE_SECONDS = 60;
+    /** Bean name referenced by {@code @Qualifier} at the injection sites. */
+    public static final String MEDIA_SYNC_EXECUTOR = "mediaSyncExecutor";
 
-    @Bean(name = "mediaSyncExecutor", destroyMethod = "shutdown")
-    public ExecutorService mediaSyncExecutor() {
-        ThreadFactory threadFactory = new ThreadFactory() {
-            private final AtomicInteger counter = new AtomicInteger(1);
+    private final MediaSyncProperties properties;
 
-            @Override
-            public Thread newThread(Runnable r) {
-                Thread t = new Thread(r, "media-sync-" + counter.getAndIncrement());
-                t.setDaemon(true);
-                return t;
-            }
-        };
+    @Bean(name = MEDIA_SYNC_EXECUTOR)
+    public ThreadPoolTaskExecutor mediaSyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(properties.getPoolSize());
+        executor.setMaxPoolSize(properties.getPoolSize());
+        executor.setQueueCapacity(properties.getQueueCapacity());
+        executor.setKeepAliveSeconds((int) properties.getKeepAliveSeconds());
+        executor.setThreadNamePrefix(properties.getThreadNamePrefix());
+        executor.setAllowCoreThreadTimeOut(true);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds((int) properties.getAwaitTerminationSeconds());
+        executor.initialize();
 
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                POOL_SIZE,                          // core pool size
-                POOL_SIZE,                          // max pool size (fixed)
-                KEEP_ALIVE_SECONDS, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(QUEUE_CAPACITY),
-                threadFactory,
-                new ThreadPoolExecutor.CallerRunsPolicy()  // backpressure: caller thread runs the task
-        );
-
-        // Allow core threads to time out if idle — saves resources when no syncs are running
-        executor.allowCoreThreadTimeOut(true);
-
-        log.info("Media sync thread pool initialized: poolSize={}, queueCapacity={}",
-                POOL_SIZE, QUEUE_CAPACITY);
+        log.info("Media sync thread pool initialised: poolSize={} queueCapacity={} awaitTerminationSeconds={}",
+                properties.getPoolSize(), properties.getQueueCapacity(),
+                properties.getAwaitTerminationSeconds());
 
         return executor;
     }

@@ -2,8 +2,8 @@ package com.aigreentick.services.template.application.dto.command;
 
 import java.util.List;
 
-import com.aigreentick.services.template.api.dto.request.create.BaseTemplateRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateVariablesRequestDto;
+import com.aigreentick.services.template.api.request.BaseTemplateRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateVariablesRequestDto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

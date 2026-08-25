@@ -6,7 +6,10 @@
  *                       built by {@code api.mapper} from {@code api.dto.request}.
  *  - {@code result}  — outputs from use cases (e.g. {@code TemplateResult}),
  *                       converted by {@code api.mapper} into {@code api.dto.response}.
- *  - {@code audit}   — events published outward via {@code port.out.TemplateAuditPort}.
+ *  (An {@code audit} sub-package previously listed here declared a
+ *  TemplateAuditPort and two event DTOs. Nothing implemented the port and
+ *  nothing called it - a closed loop of speculative scaffolding, which
+ *  docs/rules.md explicitly forbids. Removed rather than left as a promise.)
  *
  * Rule: nothing in this package imports from {@code api.dto} — see
  * RULES.md, "application never imports from api."

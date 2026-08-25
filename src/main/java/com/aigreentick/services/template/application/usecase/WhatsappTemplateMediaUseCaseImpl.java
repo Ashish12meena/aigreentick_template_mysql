@@ -10,11 +10,11 @@ import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.aigreentick.services.template.api.dto.response.client.AccessTokenIdentifier;
-import com.aigreentick.services.template.api.dto.response.client.FacebookApiResponse;
-import com.aigreentick.services.template.api.dto.response.media.ResumableMediaUploadResponseDto;
-import com.aigreentick.services.template.api.dto.response.media.UploadMediaResponse;
-import com.aigreentick.services.template.api.dto.response.media.UploadSessionResponse;
+import com.aigreentick.services.template.application.dto.client.AccessTokenIdentifier;
+import com.aigreentick.services.template.application.dto.client.FacebookApiResponse;
+import com.aigreentick.services.template.api.response.media.ResumableMediaUploadResponseDto;
+import com.aigreentick.services.template.api.response.media.UploadMediaResponse;
+import com.aigreentick.services.template.api.response.media.UploadSessionResponse;
 import com.aigreentick.services.template.application.port.out.FacebookMediaUploadPort;
 import com.aigreentick.services.template.application.port.out.WabaCredentialPort;
 import com.aigreentick.services.template.common.exception.ExternalServiceException;

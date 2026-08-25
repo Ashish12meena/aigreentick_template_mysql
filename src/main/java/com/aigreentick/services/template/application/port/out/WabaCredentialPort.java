@@ -1,7 +1,7 @@
 package com.aigreentick.services.template.application.port.out;
 
-import com.aigreentick.services.template.api.dto.response.client.AccessTokenIdentifier;
-import com.aigreentick.services.template.api.dto.response.client.WhatsappAccountCredentials;
+import com.aigreentick.services.template.application.dto.client.AccessTokenIdentifier;
+import com.aigreentick.services.template.application.dto.client.WhatsappAccountCredentials;
 import com.aigreentick.services.template.application.dto.TenantScope;
 
 /**

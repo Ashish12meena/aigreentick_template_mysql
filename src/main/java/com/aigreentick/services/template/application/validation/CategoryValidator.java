@@ -6,7 +6,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.*;
+import com.aigreentick.services.template.api.request.*;
 import com.aigreentick.services.template.domain.enums.*;
 
 /**

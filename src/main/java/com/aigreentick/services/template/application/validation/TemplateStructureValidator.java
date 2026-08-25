@@ -6,7 +6,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.*;
+import com.aigreentick.services.template.api.request.*;
 import com.aigreentick.services.template.domain.enums.CardComponentType;
 import com.aigreentick.services.template.domain.enums.ComponentFormat;
 import com.aigreentick.services.template.domain.enums.ComponentType;

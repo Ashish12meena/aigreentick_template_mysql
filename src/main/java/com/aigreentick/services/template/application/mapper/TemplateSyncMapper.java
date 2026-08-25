@@ -8,13 +8,13 @@ import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateButtonRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouseCardComponentRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouselButtonRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateCarouselCardRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateComponentRequestDto;
-import com.aigreentick.services.template.api.dto.request.create.WhatsappTemplateExampleRequestDto;
-import com.aigreentick.services.template.api.dto.request.sync.SyncTemplateRequest;
+import com.aigreentick.services.template.api.request.WhatsappTemplateButtonRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouseCardComponentRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouselButtonRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateCarouselCardRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateComponentRequestDto;
+import com.aigreentick.services.template.api.request.WhatsappTemplateExampleRequestDto;
+import com.aigreentick.services.template.api.request.SyncTemplateRequest;
 import com.aigreentick.services.template.domain.enums.CarouselButtonType;
 import com.aigreentick.services.template.domain.enums.ComponentFormat;
 import com.aigreentick.services.template.domain.enums.ComponentType;

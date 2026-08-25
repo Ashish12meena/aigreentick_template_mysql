@@ -1,13 +1,14 @@
 package com.aigreentick.services.template.application.service;
 
+import com.aigreentick.services.template.infrastructure.config.MediaSyncThreadPoolConfig;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,7 @@ import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplateCarouselCard;
 import com.aigreentick.services.template.domain.model.WhatsappTemplateCarouselCardComponent;
 import com.aigreentick.services.template.domain.model.WhatsappTemplateComponent;
-import com.aigreentick.services.template.infrastructure.config.MediaServiceProperties;
+import com.aigreentick.services.template.infrastructure.config.properties.MediaServiceProperties;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,6 +35,11 @@ import lombok.extern.slf4j.Slf4j;
  * Uses a dedicated {@code mediaSyncExecutor} thread pool instead of Reactor's
  * boundedElastic scheduler. This isolates blocking I/O from the rest of the
  * application and prevents thread starvation under heavy sync load.
+ *
+ * <p><b>Media sync is best-effort and NOT transactional.</b> A template whose
+ * media fails to re-host keeps its original Facebook URL and is still persisted.
+ * That is intentional, but it means a silent failure here is invisible in the
+ * template data — so every path that loses a URL logs why, at WARN or ERROR.
  */
 @Service
 @Slf4j
@@ -44,13 +50,13 @@ public class MediaSyncService {
     private final FacebookMediaDownloadService mediaDownloader;
     private final InternalMediaPort mediaUploader;
     private final MediaServiceProperties batchConfig;
-    private final ExecutorService mediaSyncExecutor;
+    private final Executor mediaSyncExecutor;
 
     public MediaSyncService(
             FacebookMediaDownloadService mediaDownloader,
             InternalMediaPort mediaUploader,
             MediaServiceProperties batchConfig,
-            @Qualifier("mediaSyncExecutor") ExecutorService mediaSyncExecutor) {
+            @Qualifier(MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR) Executor mediaSyncExecutor) {
         this.mediaDownloader = mediaDownloader;
         this.mediaUploader = mediaUploader;
         this.batchConfig = batchConfig;
@@ -134,6 +140,8 @@ public class MediaSyncService {
             log.info("Phase 2: split into {} chunk(s)", chunks.size());
 
             // ─── Phase 3: Batch upload per chunk ───
+            int totalMapped = 0;
+
             for (int i = 0; i < chunks.size(); i++) {
                 List<DownloadedMediaTask> chunk = chunks.get(i);
                 long upStart = System.currentTimeMillis();
@@ -144,7 +152,20 @@ public class MediaSyncService {
                         i + 1, chunks.size(), chunk.size(), System.currentTimeMillis() - upStart);
 
                 // ─── Phase 4: Map results back to entities ───
-                mapResultsToTasks(response, chunk);
+                totalMapped += mapResultsToTasks(response, chunk);
+            }
+
+            // The number that actually matters. Everything above counts files
+            // moved; this counts templates that will point at our own storage.
+            // Without it the sync logs a confident "complete" whether it resolved
+            // every URL or none of them.
+            if (totalMapped == downloaded.size()) {
+                log.info("Phase 4 complete: {}/{} media URL(s) resolved",
+                        totalMapped, downloaded.size());
+            } else {
+                log.warn("Phase 4 complete: {}/{} media URL(s) resolved - {} template component(s) "
+                                + "keep their original Facebook URL",
+                        totalMapped, downloaded.size(), downloaded.size() - totalMapped);
             }
 
         } finally {
@@ -253,44 +274,103 @@ public class MediaSyncService {
 
     // ── Phase 4: Result mapping ──
 
-    private void mapResultsToTasks(BatchUploadResult response, List<DownloadedMediaTask> chunk) {
+    /**
+     * Writes each uploaded URL back onto its originating task.
+     *
+     * <p><b>Matched by POSITION, not by filename.</b> storage-service guarantees
+     * {@code results} is in request order with exactly one entry per submitted
+     * file, and that is the documented join. The previous filename-keyed
+     * {@code Collectors.toMap} happened to work only because
+     * {@link #downloadSingle} prefixes every upload filename with a globally
+     * unique index — change that naming, or reuse a name inside one chunk, and
+     * {@code toMap} throws {@code IllegalStateException} on the duplicate key and
+     * kills the chunk. Positional matching carries no such hidden dependency.
+     *
+     * <p>The cardinality check is what makes the position safe to trust. If it
+     * does not hold, nothing is mapped: attaching media URLs to the wrong
+     * templates is silent, permanent, and nothing downstream re-verifies it,
+     * whereas mapping nothing costs one re-sync.
+     *
+     * @return how many URLs were actually applied
+     */
+    private int mapResultsToTasks(BatchUploadResult response, List<DownloadedMediaTask> chunk) {
         if (response == null) {
-            log.error("Batch upload returned null response");
-            return;
+            // The adapter already logged the cause with a stack trace. This line
+            // records the CONSEQUENCE, which the adapter cannot see: these
+            // specific template components keep their Facebook URLs.
+            log.error("Batch upload returned null response - {} file(s) in this chunk keep no media URL",
+                    chunk.size());
+            return 0;
         }
 
-        if (response.getResults() == null || response.getResults().isEmpty()) {
-            log.warn("Batch upload returned no results. successCount={} failedCount={}",
+        List<BatchUploadResult.BatchFileResult> results = response.getResults();
+
+        if (results == null || results.size() != chunk.size()) {
+            log.error("Batch returned {} result(s) for {} submitted file(s); positional join is unsafe, "
+                            + "discarding chunk. successCount={} failedCount={}",
+                    results == null ? "null" : String.valueOf(results.size()), chunk.size(),
                     response.getSuccessCount(), response.getFailedCount());
-            return;
+            return 0;
         }
 
-        Map<String, DownloadedMediaTask> tasksByFilename = chunk.stream()
-                .collect(Collectors.toMap(DownloadedMediaTask::getUploadFilename, t -> t));
+        Map<String, Integer> failureCodes = new LinkedHashMap<>();
+        int mapped = 0;
+        int retryable = 0;
 
-        for (BatchUploadResult.BatchFileResult result : response.getResults()) {
-            if (result.getOriginalFilename() == null) {
-                log.warn("Batch result missing originalFilename, skipping");
+        for (int i = 0; i < results.size(); i++) {
+            BatchUploadResult.BatchFileResult result = results.get(i);
+            DownloadedMediaTask task = chunk.get(i);
+
+            // Tripwire on the ordering assumption. Upload filenames are unique
+            // per run, so a mismatch here means the contract changed and every
+            // URL in this chunk would land on the wrong template component.
+            if (result.getOriginalFilename() != null
+                    && !result.getOriginalFilename().equals(task.getUploadFilename())) {
+                log.error("Result order mismatch at index {}: storage returned '{}', expected '{}'. "
+                                + "Discarding chunk rather than risk mis-assigning media URLs.",
+                        i, result.getOriginalFilename(), task.getUploadFilename());
+                return mapped;
+            }
+
+            if (result.isSuccess() && result.getUrl() != null) {
+                task.getMediaTask().applyUrl(result.getUrl());
+                mapped++;
+                log.debug("Mapped URL for file='{}' url='{}'", task.getUploadFilename(), result.getUrl());
                 continue;
             }
 
-            DownloadedMediaTask dt = tasksByFilename.get(result.getOriginalFilename());
-            if (dt == null) {
-                log.warn("No task found for filename='{}', skipping", result.getOriginalFilename());
-                continue;
+            // A SUCCESS carrying no URL is not a success. Counting it as one would
+            // leave the component pointing at Facebook while the totals claim
+            // everything resolved — the failure would be invisible.
+            String code = result.isSuccess()
+                    ? "SUCCESS_WITHOUT_URL"
+                    : (result.errorCode() == null ? "UNSPECIFIED" : result.errorCode());
+            failureCodes.merge(code, 1, Integer::sum);
+
+            if (result.getStatus() == BatchUploadResult.BatchFileResult.Status.SKIPPED) {
+                retryable++;
             }
 
-            // Compare against enum, not String
-            if (BatchUploadResult.BatchFileResult.Status.SUCCESS == result.getStatus()
-                    && result.getUrl() != null) {
-                dt.getMediaTask().applyUrl(result.getUrl());
-                log.debug("Mapped URL for file='{}' url='{}'", result.getOriginalFilename(), result.getUrl());
-            } else {
-                log.warn("File '{}' failed in storage service: {}",
-                        result.getOriginalFilename(), result.getError());
-            }
+            log.warn("File '{}' not stored: status={} code={} message={}",
+                    task.getUploadFilename(), result.getStatus(), code, result.errorMessage());
         }
+
+        if (failureCodes.isEmpty()) {
+            log.info("Chunk mapped: {}/{} media URL(s) applied", mapped, chunk.size());
+        } else {
+            // The histogram IS the diagnosis. QUOTA_NOT_PROVISIONED means ops must
+            // provision the project; CONTENT_TYPE_NOT_ALLOWED means the allowlist
+            // or the file itself; BATCH_ITEM_SKIPPED means storage was down and a
+            // plain re-sync fixes it. Counters alone cannot separate those, and
+            // that ambiguity is what made the last outage take days to find.
+            log.warn("Chunk mapped: {}/{} media URL(s) applied; {} not stored {}{}",
+                    mapped, chunk.size(), chunk.size() - mapped, failureCodes,
+                    retryable > 0 ? " (" + retryable + " skipped, safe to re-sync)" : "");
+        }
+
+        return mapped;
     }
+
     // ── Task collection (UNCHANGED) ──
 
     List<MediaTask> collectMediaTasks(
@@ -405,6 +485,26 @@ public class MediaSyncService {
         return (handle != null && !handle.isBlank()) ? handle : null;
     }
 
+    /**
+     * Suffix for the upload filename — a HINT for content detection, nothing more.
+     *
+     * <p>This extension no longer influences the declared content type. That path
+     * was closed in {@code InternalMediaAdapter.unnamed(File)}, which strips the
+     * resource name so Spring cannot derive a type from it and the explicit
+     * {@code application/octet-stream} survives to the wire.
+     *
+     * <p>What the extension still does is feed storage-service's Tika inspector,
+     * which sets it as {@code RESOURCE_NAME_KEY}. There, a filename hint only
+     * REFINES a magic-byte match and can never override one — so a PNG named
+     * {@code .jpg} is still correctly detected as {@code image/png}, while an MP4
+     * container that magic bytes alone leave ambiguous gets resolved to
+     * {@code video/mp4} instead of falling outside the allowlist.
+     *
+     * <p>That second case is not hypothetical: briefly returning {@code .bin} for
+     * everything removed the hint and turned 13 previously-fine videos into
+     * {@code CONTENT_TYPE_NOT_ALLOWED}. The hint is load-bearing for video and
+     * costs nothing for anything else.
+     */
     private String resolveExtension(String mediaType) {
         if (mediaType == null)
             return ".bin";

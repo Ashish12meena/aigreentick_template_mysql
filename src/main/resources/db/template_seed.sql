@@ -265,14 +265,14 @@ COMMIT;
 -- =====================================================================
 -- Sanity check — row counts per table
 -- =====================================================================
-SELECT 'whatsapp_templates' AS table_name, COUNT(*) AS rows FROM whatsapp_templates
-UNION ALL SELECT 'whatsapp_template_components', COUNT(*) FROM whatsapp_template_components
-UNION ALL SELECT 'whatsapp_template_buttons', COUNT(*) FROM whatsapp_template_buttons
-UNION ALL SELECT 'whatsapp_template_button_supported_apps', COUNT(*) FROM whatsapp_template_button_supported_apps
-UNION ALL SELECT 'whatsapp_template_examples', COUNT(*) FROM whatsapp_template_examples
-UNION ALL SELECT 'whatsapp_template_carousel_cards', COUNT(*) FROM whatsapp_template_carousel_cards
-UNION ALL SELECT 'whatsapp_template_carousel_card_components', COUNT(*) FROM whatsapp_template_carousel_card_components
-UNION ALL SELECT 'whatsapp_template_carousel_buttons', COUNT(*) FROM whatsapp_template_carousel_buttons
-UNION ALL SELECT 'whatsapp_template_carousel_examples', COUNT(*) FROM whatsapp_template_carousel_examples
-UNION ALL SELECT 'whatsapp_template_variables', COUNT(*) FROM whatsapp_template_variables
-UNION ALL SELECT 'whatsapp_template_media_uploads', COUNT(*) FROM whatsapp_template_media_uploads;
+-- SELECT 'whatsapp_templates' AS table_name, COUNT(*) as rows  FROM whatsapp_templates
+-- UNION ALL SELECT 'whatsapp_template_components', COUNT(*) FROM whatsapp_template_components
+-- UNION ALL SELECT 'whatsapp_template_buttons', COUNT(*) FROM whatsapp_template_buttons
+-- UNION ALL SELECT 'whatsapp_template_button_supported_apps', COUNT(*) FROM whatsapp_template_button_supported_apps
+-- UNION ALL SELECT 'whatsapp_template_examples', COUNT(*) FROM whatsapp_template_examples
+-- UNION ALL SELECT 'whatsapp_template_carousel_cards', COUNT(*) FROM whatsapp_template_carousel_cards
+-- UNION ALL SELECT 'whatsapp_template_carousel_card_components', COUNT(*) FROM whatsapp_template_carousel_card_components
+-- UNION ALL SELECT 'whatsapp_template_carousel_buttons', COUNT(*) FROM whatsapp_template_carousel_buttons
+-- UNION ALL SELECT 'whatsapp_template_carousel_examples', COUNT(*) FROM whatsapp_template_carousel_examples
+-- UNION ALL SELECT 'whatsapp_template_variables', COUNT(*) FROM whatsapp_template_variables
+-- UNION ALL SELECT 'whatsapp_template_media_uploads', COUNT(*) FROM whatsapp_template_media_uploads;

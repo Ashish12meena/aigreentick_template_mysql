@@ -7,7 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.aigreentick.services.template.api.dto.request.create.BaseTemplateRequestDto;
+import com.aigreentick.services.template.api.request.BaseTemplateRequestDto;
 import com.aigreentick.services.template.application.dto.command.UpdateDraftTemplateCommand;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;
 import com.aigreentick.services.template.application.mapper.WhatsappTemplateMapper;

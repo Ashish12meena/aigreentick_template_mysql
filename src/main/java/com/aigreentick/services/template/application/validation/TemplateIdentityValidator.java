@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Component;
 
-import com.aigreentick.services.template.api.dto.request.create.BaseTemplateRequestDto;
+import com.aigreentick.services.template.api.request.BaseTemplateRequestDto;
 import com.aigreentick.services.template.application.validation.support.SupportedLanguages;
 
 /** Template name and language — the two identity fields Meta validates strictly. */
