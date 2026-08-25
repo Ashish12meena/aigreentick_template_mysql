@@ -35,7 +35,7 @@ jobs:
             systemctl restart java-apargo-template.service
 
             echo "Checking service status..."
-            sleep 20
+            sleep 60
             systemctl is-active java-apargo-template.service
 
             echo "Deployment Successful!"
