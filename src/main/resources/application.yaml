@@ -46,7 +46,7 @@ spring:
   # own ObjectMapper explicitly in WebClientConfig.
   # --------------------------------------------------------------------------
   jackson:
-    property-naming-strategy: SNAKE_CASE
+    # property-naming-strategy: SNAKE_CASE
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
@@ -82,7 +82,7 @@ internal:
 facebook-service:
   base-url: ${FACEBOOK_SERVICE_BASE_URL:https://graph.facebook.com}
   api-version: ${FACEBOOK_API_VERSION:v23.0}
-  connect-timeout: ${FACEBOOK_CONNECT_TIMEOUT_MS:5000}
+  connect-timeout: ${FACEBOOK_CONNECT_TIMEOUT_MS:10000}
   read-timeout: ${FACEBOOK_READ_TIMEOUT_MS:30000}
   max-in-memory-size-bytes: ${FACEBOOK_MAX_IN_MEMORY_BYTES:16777216}
 
@@ -94,7 +94,7 @@ waba-service:
     credentials-by-waba: /internal/v1/waba-credentials/by-waba/{wabaId}
 
 media-service:
-  base-url: ${MEDIA_SERVICE_BASE_URL:http://localhost:8030}
+  base-url: ${MEDIA_SERVICE_BASE_URL:http://146.88.24.113:8030}
   connect-timeout: ${MEDIA_CONNECT_TIMEOUT_MS:5000}
   read-timeout: ${MEDIA_READ_TIMEOUT_MS:60000}
   max-in-memory-size-bytes: ${MEDIA_MAX_IN_MEMORY_BYTES:2097152}

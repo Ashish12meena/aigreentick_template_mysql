@@ -3,13 +3,13 @@ package com.aigreentick.services.template.api.internal.v1;
 import com.aigreentick.services.template.api.mapper.TemplateDetailResponseMapper;
 import com.aigreentick.services.template.api.response.ResponseMessage;
 import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
+import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 import com.aigreentick.services.template.application.port.in.GetTemplateUseCase;
 import com.aigreentick.services.template.common.constant.ApiHeaders;
 import com.aigreentick.services.template.common.constant.ApiPaths;
 import com.aigreentick.services.template.common.constant.InternalHeaders;
 import com.aigreentick.services.template.common.constant.SecuritySchemes;
 import com.aigreentick.services.template.common.constant.TemplateConstants;
-import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -105,7 +105,7 @@ public class InternalTemplateController {
 
         log.info("Internal template read templateId={} projectId={} caller={}", templateId, projectId, caller);
 
-        WhatsappTemplate template = getTemplateUseCase.getById(templateId, projectId);
+        TemplateDetailResult template = getTemplateUseCase.getById(templateId, projectId);
         return ResponseEntity.ok(ResponseMessage.success(
                 TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template)));
@@ -146,7 +146,7 @@ public class InternalTemplateController {
         log.info("Internal template lookup name={} language={} projectId={} wabaId={} caller={}",
                 name, language, projectId, wabaId, caller);
 
-        WhatsappTemplate template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
+        TemplateDetailResult template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
         return ResponseEntity.ok(ResponseMessage.success(
                 TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template)));

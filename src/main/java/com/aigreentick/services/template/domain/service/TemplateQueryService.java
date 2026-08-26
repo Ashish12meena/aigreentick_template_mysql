@@ -31,4 +31,6 @@ public interface TemplateQueryService {
     List<WhatsappTemplate> findAllByMetaIds(Set<String> metaIds, Long projectId);
 
     long countActiveByProject(Long projectId);
+
+    WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId);
 }

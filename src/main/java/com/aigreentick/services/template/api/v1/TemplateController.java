@@ -10,6 +10,7 @@ import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
 import com.aigreentick.services.template.api.response.TemplateResponseDto;
 import com.aigreentick.services.template.api.response.TemplateSyncStats;
 import com.aigreentick.services.template.api.response.media.ResumableMediaUploadResponseDto;
+import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;
 import com.aigreentick.services.template.application.dto.result.TemplateSummaryResult;
 import com.aigreentick.services.template.application.port.in.CreateTemplateUseCase;
@@ -24,7 +25,6 @@ import com.aigreentick.services.template.common.constant.ApiPaths;
 import com.aigreentick.services.template.common.constant.TemplateConstants;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
-import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -181,7 +181,7 @@ public class TemplateController {
 
         log.info("Get template templateId={} projectId={}", templateId, projectId);
 
-        WhatsappTemplate template = getTemplateUseCase.getById(templateId, projectId);
+        TemplateDetailResult template = getTemplateUseCase.getById(templateId, projectId);
         return ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template));
     }
@@ -248,7 +248,7 @@ public class TemplateController {
         log.info("Lookup template name={} language={} projectId={} wabaId={}",
                 name, language, projectId, wabaId);
 
-        WhatsappTemplate template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
+        TemplateDetailResult template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
         return ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template));
     }

@@ -6,7 +6,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 import com.aigreentick.services.template.application.dto.result.TemplateSummaryResult;
+import com.aigreentick.services.template.application.mapper.TemplateDetailResultMapper;
 import com.aigreentick.services.template.application.mapper.TemplateResultMapper;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
@@ -24,16 +26,22 @@ public class GetTemplateUseCaseImpl implements GetTemplateUseCase {
 
     private final TemplateQueryService queryService;
     private final TemplateResultMapper resultMapper;
+    private final TemplateDetailResultMapper detailResultMapper;
 
-    public WhatsappTemplate getById(Long templateId, Long projectId) {
+    public TemplateDetailResult getById(Long templateId, Long projectId) {
         log.info("Fetching template id={} projectId={}", templateId, projectId);
-        return queryService.getByIdAndProject(templateId, projectId);
+        WhatsappTemplate template = queryService.getByIdAndProject(templateId, projectId);
+        // Mapped here, inside the still-open transaction, so every lazy
+        // collection on the entity graph (components/buttons/carousel/...)
+        // is loaded and flattened before it ever leaves this method.
+        return detailResultMapper.toDetailResult(template);
     }
 
-    public WhatsappTemplate getByNameAndLanguage(
+    public TemplateDetailResult getByNameAndLanguage(
             Long projectId, String name, String language, String wabaId) {
         log.info("Fetching template name={} language={} projectId={}", name, language, projectId);
-        return queryService.getByNameLanguageAndWaba(projectId, name, language, wabaId);
+        WhatsappTemplate template = queryService.getByNameLanguageAndWaba(projectId, name, language, wabaId);
+        return detailResultMapper.toDetailResult(template);
     }
 
     public Page<TemplateSummaryResult> list(

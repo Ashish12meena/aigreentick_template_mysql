@@ -1,22 +1,40 @@
-package com.aigreentick.services.template.api.response;
+package com.aigreentick.services.template.application.dto.result;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.aigreentick.services.template.domain.enums.ButtonType;
+import com.aigreentick.services.template.domain.enums.CardComponentFormat;
+import com.aigreentick.services.template.domain.enums.CardComponentType;
+import com.aigreentick.services.template.domain.enums.CarouselButtonType;
+import com.aigreentick.services.template.domain.enums.ComponentFormat;
+import com.aigreentick.services.template.domain.enums.ComponentType;
+import com.aigreentick.services.template.domain.enums.OtpType;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateQualityRating;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
+import com.aigreentick.services.template.domain.enums.VariableComponentType;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Full per-template shape used by {@code GetTemplateUseCase.getById(...)} and
+ * {@code getByNameAndLanguage(...)}. Built by {@link
+ * com.aigreentick.services.template.application.mapper.TemplateDetailResultMapper}
+ * while the use case's transaction is still open, so every lazy collection on
+ * {@code WhatsappTemplate} is walked and flattened right here — the entity
+ * itself never leaves the application layer. Kept separate from {@link
+ * TemplateSummaryResult} because a detail read needs the full component /
+ * button / carousel tree that a list row never carries.
+ */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class TemplateDetailResponseDto {
+public class TemplateDetailResult {
 
     private Long id;
     private String name;
@@ -32,18 +50,17 @@ public class TemplateDetailResponseDto {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    private List<ComponentDto> components;
-    private List<VariableDto> variables;
+    private List<ComponentResult> components;
+    private List<VariableResult> variables;
 
-    // ─── Component ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class ComponentDto {
+    public static class ComponentResult {
         private Long id;
-        private String componentType;
-        private String format;
+        private ComponentType componentType;
+        private ComponentFormat format;
         private String text;
         private String mediaHandle;
         private String mediaUrl;
@@ -51,99 +68,92 @@ public class TemplateDetailResponseDto {
         private Integer codeExpirationMinutes;
         private Integer componentOrder;
 
-        private ExampleDto example;
-        private List<ButtonDto> buttons;
-        private List<CarouselCardDto> carouselCards;
+        private ExampleResult example;
+        private List<ButtonResult> buttons;
+        private List<CarouselCardResult> carouselCards;
     }
 
-    // ─── Button ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class ButtonDto {
+    public static class ButtonResult {
         private Long id;
-        private String buttonType;
+        private ButtonType buttonType;
         private String text;
         private String url;
         private String phoneNumber;
-        private String otpType;
+        private OtpType otpType;
         private Integer buttonIndex;
         private List<String> example;
-        private List<SupportedAppDto> supportedApps;
+        private List<SupportedAppResult> supportedApps;
     }
 
-    // ─── Supported App (OTP Autofill) ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class SupportedAppDto {
+    public static class SupportedAppResult {
         private Long id;
         private String packageName;
         private String signatureHash;
     }
 
-    // ─── Example ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class ExampleDto {
+    public static class ExampleResult {
         private Long id;
         private List<String> headerText;
         private List<String> headerHandle;
         private List<List<String>> bodyText;
     }
 
-    // ─── Carousel Card ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class CarouselCardDto {
+    public static class CarouselCardResult {
         private Long id;
         private Integer cardIndex;
-        private List<CardComponentDto> cardComponents;
+        private List<CardComponentResult> cardComponents;
     }
 
-    // ─── Card Component ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class CardComponentDto {
+    public static class CardComponentResult {
         private Long id;
-        private String componentType;
-        private String format;
+        private CardComponentType componentType;
+        private CardComponentFormat format;
         private String text;
         private String mediaHandle;
         private String mediaUrl;
-        private List<CarouselButtonDto> buttons;
+        private List<CarouselButtonResult> buttons;
     }
 
-    // ─── Carousel Button ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class CarouselButtonDto {
+    public static class CarouselButtonResult {
         private Long id;
-        private String buttonType;
+        private CarouselButtonType buttonType;
         private String text;
         private String url;
         private String phoneNumber;
         private Integer buttonIndex;
     }
 
-    // ─── Variable ───
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
     @Builder
-    public static class VariableDto {
+    public static class VariableResult {
         private Long id;
-        private String componentType;
+        private VariableComponentType componentType;
         private Integer variableIndex;
         private String label;
         private String labelValue;

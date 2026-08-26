@@ -5,21 +5,19 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
-import com.aigreentick.services.template.domain.model.WhatsappTemplate;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateButton;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateButtonSupportedApp;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateCarouselButton;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateCarouselCard;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateCarouselCardComponent;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateComponent;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateExample;
-import com.aigreentick.services.template.domain.model.WhatsappTemplateVariable;
+import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 
-
+/**
+ * Maps the application layer's {@link TemplateDetailResult} to the REST
+ * response shape. This never touches a JPA entity — the entity graph was
+ * already flattened by {@code TemplateDetailResultMapper} inside the
+ * use case's transaction, so there's no lazy-loading risk here regardless
+ * of where or when this mapper runs.
+ */
 @Component
 public class TemplateDetailResponseMapper {
 
-    public TemplateDetailResponseDto mapToDetailResponse(WhatsappTemplate template) {
+    public TemplateDetailResponseDto mapToDetailResponse(TemplateDetailResult template) {
         return TemplateDetailResponseDto.builder()
                 .id(template.getId())
                 .name(template.getName())
@@ -36,13 +34,11 @@ public class TemplateDetailResponseMapper {
                 .updatedAt(template.getUpdatedAt())
                 .components(mapComponentsToDto(template.getComponents()))
                 .variables(mapVariablesToDto(template.getVariables()))
-                .wabaId(template.getWabaId())
-                .qualityRating(template.getQualityRating())
                 .build();
     }
 
     private List<TemplateDetailResponseDto.ComponentDto> mapComponentsToDto(
-            List<WhatsappTemplateComponent> components) {
+            List<TemplateDetailResult.ComponentResult> components) {
 
         if (components == null || components.isEmpty()) {
             return List.of();
@@ -53,6 +49,8 @@ public class TemplateDetailResponseMapper {
                 .componentType(comp.getComponentType() != null ? comp.getComponentType().name() : null)
                 .format(comp.getFormat() != null ? comp.getFormat().name() : null)
                 .text(comp.getText())
+                .mediaHandle(comp.getMediaHandle())
+                .mediaUrl(comp.getMediaUrl())
                 .addSecurityRecommendation(comp.getAddSecurityRecommendation())
                 .codeExpirationMinutes(comp.getCodeExpirationMinutes())
                 .componentOrder(comp.getComponentOrder())
@@ -64,7 +62,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.ButtonDto> mapButtonsToDto(
-            List<WhatsappTemplateButton> buttons) {
+            List<TemplateDetailResult.ButtonResult> buttons) {
 
         if (buttons == null || buttons.isEmpty()) {
             return List.of();
@@ -85,7 +83,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.SupportedAppDto> mapSupportedAppsToDto(
-            List<WhatsappTemplateButtonSupportedApp> apps) {
+            List<TemplateDetailResult.SupportedAppResult> apps) {
 
         if (apps == null || apps.isEmpty()) {
             return List.of();
@@ -99,7 +97,7 @@ public class TemplateDetailResponseMapper {
         ).toList();
     }
 
-    private TemplateDetailResponseDto.ExampleDto mapExampleToDto(WhatsappTemplateExample example) {
+    private TemplateDetailResponseDto.ExampleDto mapExampleToDto(TemplateDetailResult.ExampleResult example) {
         if (example == null) {
             return null;
         }
@@ -113,7 +111,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.CarouselCardDto> mapCarouselCardsToDto(
-            List<WhatsappTemplateCarouselCard> cards) {
+            List<TemplateDetailResult.CarouselCardResult> cards) {
 
         if (cards == null || cards.isEmpty()) {
             return List.of();
@@ -128,7 +126,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.CardComponentDto> mapCardComponentsToDto(
-            List<WhatsappTemplateCarouselCardComponent> cardComponents) {
+            List<TemplateDetailResult.CardComponentResult> cardComponents) {
 
         if (cardComponents == null || cardComponents.isEmpty()) {
             return List.of();
@@ -147,7 +145,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.CarouselButtonDto> mapCarouselButtonsToDto(
-            List<WhatsappTemplateCarouselButton> buttons) {
+            List<TemplateDetailResult.CarouselButtonResult> buttons) {
 
         if (buttons == null || buttons.isEmpty()) {
             return List.of();
@@ -165,7 +163,7 @@ public class TemplateDetailResponseMapper {
     }
 
     private List<TemplateDetailResponseDto.VariableDto> mapVariablesToDto(
-            List<WhatsappTemplateVariable> variables) {
+            List<TemplateDetailResult.VariableResult> variables) {
 
         if (variables == null || variables.isEmpty()) {
             return List.of();
@@ -181,5 +179,5 @@ public class TemplateDetailResponseMapper {
                 .cardIndex(v.getCardIndex())
                 .build()
         ).toList();
-    }  
+    }
 }

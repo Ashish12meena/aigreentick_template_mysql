@@ -67,6 +67,12 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     }
 
     @Override
+    public WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId) {
+        return queryRepo.findDetailByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Template", "id", id));
+    }
+
+    @Override
     public boolean existsNonDraft(String wabaId, String name, String language, Long excludeTemplateId) {
         return queryRepo.existsDuplicate(
                 wabaId, name, language, TemplateStatus.DRAFT, excludeTemplateId);
