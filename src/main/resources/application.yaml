@@ -46,7 +46,7 @@ spring:
   # own ObjectMapper explicitly in WebClientConfig.
   # --------------------------------------------------------------------------
   jackson:
-    # property-naming-strategy: SNAKE_CASE
+    property-naming-strategy: SNAKE_CASE
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
