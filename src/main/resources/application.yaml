@@ -34,19 +34,27 @@ spring:
         order_updates: true
 
   # --------------------------------------------------------------------------
-  # FROZEN CONTRACT - do not change.
+  # SERVER-SIDE serialization only.
   #
-  # This service's public API serializes snake_case, and the Messaging Service
-  # parses it. Switching to camelCase would break every consumer at once, and
-  # would do so silently: fail-on-unknown-properties is off, so fields would
-  # deserialize to null rather than throw.
+  # This controls what THIS service's own HTTP API emits and accepts. It does
+  # NOT control anything that talks to an upstream, and nothing outside the
+  # web layer should depend on it:
   #
-  # Note this setting applies to the SERVER side only. Outbound clients talk
-  # to waba-service and storage-service, which are camelCase, and pin their
-  # own ObjectMapper explicitly in WebClientConfig.
+  #   - Outbound clients (waba-service, storage-service, Meta) pin an explicit
+  #     camelCase ObjectMapper in WebClientConfig.
+  #   - Meta Graph API response parsing pins an explicit snake_case
+  #     ObjectMapper in FacebookJacksonConfig.
+  #   - CreateTemplateUseCaseImpl / UpdateDraftTemplateUseCaseImpl serialize
+  #     the stored payload via JsonHelper, which carries its own mappers.
+  #
+  # Changing the value below is therefore safe for media sync, but it is NOT
+  # safe for consumers. The Messaging Service parses this API as snake_case,
+  # and because fail-on-unknown-properties is off, a mismatch does not throw —
+  # every field deserializes to null. Coordinate any change with that team and
+  # roll it out on a versioned path rather than flipping this in place.
   # --------------------------------------------------------------------------
   jackson:
-    # property-naming-strategy: SNAKE_CASE
+    # property-naming-strategy: SNAKE_CASE   # <- see note above before re-enabling
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null

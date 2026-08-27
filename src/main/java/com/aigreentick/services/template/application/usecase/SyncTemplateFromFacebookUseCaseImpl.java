@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.application.usecase;
 
+import com.aigreentick.services.template.infrastructure.config.FacebookJacksonConfig;
 import com.aigreentick.services.template.infrastructure.config.MediaSyncThreadPoolConfig;
 import com.aigreentick.services.template.application.port.in.SyncTemplateFromFacebookUseCase;
 
@@ -53,7 +54,14 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
 
     private final WabaCredentialPort accountClient;
     private final FacebookTemplateSyncPort ftsp;
-    private final ObjectMapper objectMapper;
+    /**
+     * Meta serializes snake_case, so this is deliberately NOT the
+     * auto-configured context mapper. See {@link FacebookJacksonConfig} —
+     * binding Meta payloads with a camelCase mapper drops
+     * {@code example.header_handle} silently and sync completes with every
+     * template missing its media.
+     */
+    private final ObjectMapper facebookObjectMapper;
     private final TemplateQueryService queryService;
     private final TemplateCommandService commandService;
     private final TemplateSyncMapper syncMapper;
@@ -63,7 +71,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
     public SyncTemplateFromFacebookUseCaseImpl(
             WabaCredentialPort accountClient,
             FacebookTemplateSyncPort ftsp,
-            ObjectMapper objectMapper,
+            @Qualifier(FacebookJacksonConfig.FACEBOOK_OBJECT_MAPPER) ObjectMapper facebookObjectMapper,
             TemplateQueryService queryService,
             TemplateCommandService commandService,
             TemplateSyncMapper syncMapper,
@@ -72,7 +80,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
 
         this.accountClient = accountClient;
         this.ftsp = ftsp;
-        this.objectMapper = objectMapper;
+        this.facebookObjectMapper = facebookObjectMapper;
         this.queryService = queryService;
         this.commandService = commandService;
         this.syncMapper = syncMapper;
@@ -403,7 +411,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
 
         for (JsonNode templateNode : dataNode) {
             try {
-                parsed.add(objectMapper.treeToValue(templateNode, SyncTemplateRequest.class));
+                parsed.add(facebookObjectMapper.treeToValue(templateNode, SyncTemplateRequest.class));
             } catch (Exception e) {
                 skipped++;
                 log.warn("[SYNC] Skipping unparseable template metaId={} reason={}",
