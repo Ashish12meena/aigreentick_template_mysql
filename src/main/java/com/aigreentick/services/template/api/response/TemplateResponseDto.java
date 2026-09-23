@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.api.response;
 
+import java.time.Instant;
 
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
@@ -22,6 +23,8 @@ public class TemplateResponseDto {
     private TemplateCategory category;
     private String language;
     private String metaTemplateId;
+    private Instant createdAt;
+    private Instant updatedAt;
     private String errorMessage;
     private JsonNode errorPayload;
 

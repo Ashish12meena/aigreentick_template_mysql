@@ -1,5 +1,7 @@
 package com.aigreentick.services.template.application.dto.result;
 
+import java.time.Instant;
+
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
 
@@ -24,4 +26,6 @@ public class TemplateSummaryResult {
     private TemplateCategory category;
     private String language;
     private String metaTemplateId;
+    private Instant createdAt;
+    private Instant updatedAt;
 }

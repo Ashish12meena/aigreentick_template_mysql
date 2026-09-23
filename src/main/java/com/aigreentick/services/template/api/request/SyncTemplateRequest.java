@@ -13,9 +13,9 @@ import lombok.Data;
  * <p>Despite living in {@code api.request}, this is NOT bound from an inbound
  * HTTP request — nothing accepts it as a {@code @RequestBody}. It is populated
  * only by {@code SyncTemplateFromFacebookUseCaseImpl} from Meta's response,
- * using the snake_case mapper in {@code FacebookJacksonConfig}. The camelCase
- * fields below therefore rely on that mapper's naming strategy, not on
- * {@code spring.jackson.property-naming-strategy}.
+ * using the snake_case mapper in {@code FacebookJsonMapper}. The camelCase
+ * fields below therefore rely on that mapper's naming strategy, not on the
+ * application's Jackson configuration.
  *
  * <p>The nested {@code WhatsappTemplateComponentRequestDto} and
  * {@code WhatsappTemplateExampleRequestDto} ARE shared with

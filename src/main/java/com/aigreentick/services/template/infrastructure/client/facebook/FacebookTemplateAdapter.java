@@ -23,6 +23,7 @@ import com.aigreentick.services.template.api.response.media.UploadSessionRespons
 import com.aigreentick.services.template.application.port.out.FacebookMediaUploadPort;
 import com.aigreentick.services.template.application.port.out.FacebookTemplatePort;
 import com.aigreentick.services.template.application.port.out.FacebookTemplateSyncPort;
+import com.aigreentick.services.template.common.util.helper.SecretMasker;
 import com.aigreentick.services.template.infrastructure.config.WebClientConfig;
 import com.aigreentick.services.template.infrastructure.config.properties.FacebookClientProperties;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -216,11 +217,11 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
          */
         public FacebookApiResponse<UploadSessionResponse> initiateUploadSession(String fileName, long fileSize,
                         String mimeType,
-                        String wabaAppId, String accessToken) {
+                        String appId, String accessToken) {
 
                 URI uri = UriComponentsBuilder
                                 .fromUriString(properties.getBaseUrl())
-                                .pathSegment(properties.getApiVersion(), wabaAppId, "uploads")
+                                .pathSegment(properties.getApiVersion(), appId, "uploads")
                                 .queryParam("file_name", fileName)
                                 .queryParam("file_length", fileSize)
                                 .queryParam("file_type", mimeType)
@@ -228,7 +229,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                 .build()
                                 .toUri();
 
-                log.info("Initiating upload session: {}", uri);
+                log.info("Initiating upload session: {}", SecretMasker.maskUri(uri));
 
                 try {
                         UploadSessionResponse response = webClient
@@ -239,7 +240,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                         .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
                                                         .flatMap(errorBody -> {
                                                                 log.error("Facebook API 4xx during upload initiation for appId={}: {}",
-                                                                                wabaAppId,
+                                                                                appId,
                                                                                 errorBody);
                                                                 return Mono.error(new RuntimeException(
                                                                                 "Facebook API returned 4xx: "
@@ -248,7 +249,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                         .onStatus(HttpStatusCode::is5xxServerError, r -> r.bodyToMono(String.class)
                                                         .flatMap(errorBody -> {
                                                                 log.error("Facebook API 5xx during upload initiation for appId={}: {}",
-                                                                                wabaAppId,
+                                                                                appId,
                                                                                 errorBody);
                                                                 return Mono.error(new RuntimeException(
                                                                                 "Facebook API returned 5xx: "
@@ -263,11 +264,11 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
 
                 } catch (WebClientResponseException ex) {
                         log.error("Upload session initiation failed. AppId={} Status={} Response={}",
-                                        wabaAppId, ex.getStatusCode().value(), ex.getResponseBodyAsString());
+                                        appId, ex.getStatusCode().value(), ex.getResponseBodyAsString());
                         return FacebookApiResponse.error(ex.getResponseBodyAsString(), ex.getStatusCode().value());
 
                 } catch (Exception ex) {
-                        log.error("Unexpected error initiating upload session for AppId={}", wabaAppId, ex);
+                        log.error("Unexpected error initiating upload session for AppId={}", appId, ex);
                         return FacebookApiResponse.error("Internal Server Error: " + ex.getMessage(), 500);
                 }
         }
@@ -350,7 +351,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                 .build()
                                 .toUri();
 
-                log.info("Checking upload offset: {}", uri);
+                log.info("Checking upload offset: {}", SecretMasker.maskUri(uri));
 
                 return webClient
                                 .get()
@@ -360,6 +361,10 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                 .retrieve()
                                 .bodyToMono(UploadOffsetResponse.class)
                                 .doOnNext(resp -> log.info("Received file_offset: {}", resp.getFileOffset()))
+                
+                                .onErrorMap(WebClientResponseException.class, ex -> WebClientResponseException.create(
+                                                ex.getStatusCode().value(), ex.getStatusText(), ex.getHeaders(),
+                                                ex.getResponseBodyAsByteArray(), null))
                                 .block();
         }
 

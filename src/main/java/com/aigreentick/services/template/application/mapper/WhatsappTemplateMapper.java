@@ -57,9 +57,6 @@ public class WhatsappTemplateMapper {
         if (templateReq.getComponents() != null) {
             List<WhatsappTemplateComponent> components = mapComponents(templateReq.getComponents(), template);
             template.setComponents(components);
-
-            // Apply media URLs from the request onto mapped components
-            // applyMediaUrls(request.getMediaUrls(), components);
         }
 
         // Map variables
@@ -70,59 +67,6 @@ public class WhatsappTemplateMapper {
 
         return template;
     }
-
-    // ─── Media URL mapping ───
-
-    /**
-     * Applies media URLs from the request to already-mapped component entities.
-     * <p>
-     * TEMPLATE_HEADER      → sets mediaUrl on the HEADER component
-     * CAROUSEL_CARD_HEADER → sets mediaUrl on the carousel card's HEADER card-component
-     * <p>
-     * Public so UpdateDraftTemplateUseCaseImpl can call it after rebuilding components.
-     */
-    // public void applyMediaUrls(List<MediaUrlMappingRequestDto> mediaUrls,
-    //                             List<WhatsappTemplateComponent> components) {
-
-    //     if (mediaUrls == null || mediaUrls.isEmpty() || components == null) return;
-
-    //     for (MediaUrlMappingRequestDto mapping : mediaUrls) {
-    //         if (mapping.getMediaUrl() == null || mapping.getMediaUrl().isBlank()) continue;
-
-    //         switch (mapping.getLocation()) {
-
-    //             case TEMPLATE_HEADER -> components.stream()
-    //                     .filter(c -> c.getComponentType() == ComponentType.HEADER)
-    //                     .findFirst()
-    //                     .ifPresent(header -> header.setMediaUrl(mapping.getMediaUrl()));
-
-    //             case CAROUSEL_CARD_HEADER -> components.stream()
-    //                     .filter(c -> c.getComponentType() == ComponentType.CAROUSEL)
-    //                     .findFirst()
-    //                     .ifPresent(carousel -> applyCarouselCardMediaUrl(carousel, mapping));
-    //         }
-    //     }
-    // }
-
-    // private void applyCarouselCardMediaUrl(WhatsappTemplateComponent carousel,
-    //                                         MediaUrlMappingRequestDto mapping) {
-
-    //     if (carousel.getCarouselCards() == null) return;
-
-    //     int targetCard = mapping.getCardIndex() != null ? mapping.getCardIndex() : 0;
-
-    //     carousel.getCarouselCards().stream()
-    //             .filter(card -> card.getCardIndex() == targetCard)
-    //             .findFirst()
-    //             .ifPresent(card -> {
-    //                 if (card.getCardComponents() == null) return;
-
-    //                 card.getCardComponents().stream()
-    //                         .filter(cc -> cc.getComponentType() == CardComponentType.HEADER)
-    //                         .findFirst()
-    //                         .ifPresent(cc -> cc.setMediaUrl(mapping.getMediaUrl()));
-    //             });
-    // }
 
     // ─── Variable mapping ───
 
@@ -330,6 +274,8 @@ public class WhatsappTemplateMapper {
                 .category(template.getCategory())
                 .language(template.getLanguage())
                 .metaTemplateId(template.getMetaTemplateId())
+                .createdAt(template.getCreatedAt())
+                .updatedAt(template.getUpdatedAt())
                 .build();
     }
 
@@ -342,6 +288,8 @@ public class WhatsappTemplateMapper {
                 .category(category != null ? TemplateCategory.valueOf(category.toUpperCase()) : template.getCategory())
                 .language(template.getLanguage())
                 .metaTemplateId(metaTemplateId)
+                .createdAt(template.getCreatedAt())
+                .updatedAt(template.getUpdatedAt())
                 .build();
     }
 }

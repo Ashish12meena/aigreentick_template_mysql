@@ -9,7 +9,7 @@ import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateQualityRating;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,7 +20,7 @@ import java.util.List;
         @Index(name = "idx_project_status", columnList = "project_id, status"),
         @Index(name = "idx_waba_id", columnList = "waba_id")
 })
-@SQLDelete(sql = "UPDATE whatsapp_templates SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+@SQLDelete(sql = "UPDATE whatsapp_templates SET deleted_at = UTC_TIMESTAMP(6) WHERE id = ?")
 @SQLRestriction("deleted_at IS NULL")
 @Data
 public class WhatsappTemplate {
@@ -79,13 +79,13 @@ public class WhatsappTemplate {
     private Long createdBy;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
 
     @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WhatsappTemplateComponent> components = new ArrayList<>();
@@ -95,13 +95,14 @@ public class WhatsappTemplate {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 
     // Helper methods for bidirectional relationship management

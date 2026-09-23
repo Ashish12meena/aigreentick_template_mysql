@@ -15,8 +15,8 @@ import lombok.Data;
  * Core template definition.
  *
  * Meta's own limits (name up to 512 chars, lowercase
- * snake_case naming rule, per-component text limits) are deliberately NOT
- * enforced here — they belong to the Meta rule engine (Phase 3).
+ * [a-z0-9_] naming rule, per-component text limits) are deliberately NOT
+ * enforced here — they are enforced by {@code TemplateValidationService}.
  */
 @Data
 public class BaseTemplateRequestDto {

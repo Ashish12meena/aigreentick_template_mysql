@@ -18,7 +18,7 @@ import com.aigreentick.services.template.application.dto.result.TemplateResult;
  *
  * This mapper is allowed to depend on both {@code api.dto} and
  * {@code application.dto} — that dependency direction (api → application)
- * is the one direction RULES.md allows. The use case itself never sees
+ * is the one direction docs/rules.md allows. The use case itself never sees
  * {@code CreateTemplateRequestDto} or {@code TemplateResponseDto}.
  */
 @Component
@@ -55,6 +55,8 @@ public class CreateTemplateApiMapper {
                 .category(result.getCategory())
                 .language(result.getLanguage())
                 .metaTemplateId(result.getMetaTemplateId())
+                .createdAt(result.getCreatedAt())
+                .updatedAt(result.getUpdatedAt())
                 .errorMessage(result.getErrorMessage())
                 .errorPayload(result.getErrorPayload())
                 .build();

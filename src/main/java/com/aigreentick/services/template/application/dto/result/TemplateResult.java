@@ -1,5 +1,7 @@
 package com.aigreentick.services.template.application.dto.result;
 
+import java.time.Instant;
+
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,6 +30,8 @@ public class TemplateResult {
     private TemplateCategory category;
     private String language;
     private String metaTemplateId;
+    private Instant createdAt;
+    private Instant updatedAt;
     private String errorMessage;
     private JsonNode errorPayload;
 }

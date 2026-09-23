@@ -1,6 +1,6 @@
 package com.aigreentick.services.template.application.dto.result;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import com.aigreentick.services.template.domain.enums.ButtonType;
@@ -47,8 +47,8 @@ public class TemplateDetailResult {
     private TemplateQualityRating qualityRating;
     private String rejectionReason;
     private Long createdBy;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
 
     private List<ComponentResult> components;
     private List<VariableResult> variables;

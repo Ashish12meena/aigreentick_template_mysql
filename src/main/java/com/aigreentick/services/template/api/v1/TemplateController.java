@@ -60,40 +60,14 @@ import org.springframework.web.multipart.MultipartFile;
  * Public REST surface for WhatsApp template management.
  *
  * <p>Contains no business logic — every method delegates immediately to a
- * {@code port.in} use case, per {@code docs/rules.md}.
+ * {@code port.in} use case (see {@code src/main/resources/docs/rules.md}).
  *
  * <h2>Frozen endpoint</h2>
  *
  * {@code GET /api/v1/templates/{templateId}} is consumed by the Messaging
  * Service on the message-send path. Its path, its {@code X-Project-Id}
- * requirement and its {@code {status, message, data}} snake_case envelope are
- * a live contract and are unchanged here. Everything else on this controller
- * was free to be tidied.
- *
- * <h2>What changed</h2>
- *
- * <ul>
- *   <li>Routes come from {@link ApiPaths} rather than string literals. The
- *       class-level mapping was {@code "api/v1/templates"} — no leading
- *       slash, which Spring happens to tolerate.</li>
- *   <li>The {@code GET /health} endpoint was removed. It hand-rolled a status
- *       object that always reported {@code UP} because the only way to reach
- *       it was for the service to already be up; it never checked the
- *       database or any upstream. Spring Boot Actuator's
- *       {@code /actuator/health} does the real thing and is what the
- *       Kubernetes probes in {@code application.yaml} point at.</li>
- *   <li>Tenancy headers are validated ({@code @Positive}, {@code @NotBlank})
- *       instead of being trusted. A negative or zero {@code X-Project-Id}
- *       previously reached the query layer and returned an empty page, which
- *       reads as "you have no templates" rather than "that header is
- *       wrong".</li>
- *   <li>Page size is bounded. {@code size} was unbounded, so
- *       {@code ?size=1000000} was an unauthenticated way to ask the database
- *       for everything.</li>
- *   <li>{@code @RequestHeader} for {@code X-Org-Id} was declared on the list
- *       endpoint and then never used; it is removed rather than left as a
- *       required header nothing reads.</li>
- * </ul>
+ * requirement and its {@code {status, message, data}} envelope are a live
+ * contract.
  */
 @Slf4j
 @Validated
@@ -102,7 +76,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 @Tag(name = "Templates",
         description = "Create, retrieve, update, submit, sync and delete WhatsApp message templates. "
-                + "All request and response bodies use snake_case field names.")
+                + "Request and response bodies use camelCase field names.")
 public class TemplateController {
 
     private final CreateTemplateUseCase createTemplateUseCase;
@@ -409,12 +383,14 @@ public class TemplateController {
     @PostMapping(value = ApiPaths.TEMPLATE_MEDIA, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload template header media",
             description = "Uploads an image, video or document to Meta via a resumable upload session "
-                    + "and returns the handle to reference from a template header.")
+                    + "and returns the handle to reference from a template header. "
+                    + "X-Waba-Id selects the access token; X-App-Id is the Meta app the session is opened on.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Uploaded"),
             @ApiResponse(responseCode = "400", description = "Unsupported or invalid media file"),
             @ApiResponse(responseCode = "413", description = "File exceeds the configured limit"),
-            @ApiResponse(responseCode = "502", description = "WABA credentials unavailable or Meta unreachable")
+            @ApiResponse(responseCode = "502",
+                    description = "WABA credentials unavailable, Meta unreachable, or Meta rejected the app id")
     })
     public ResponseEntity<ResponseMessage<ResumableMediaUploadResponseDto>> uploadMedia(
             @Parameter(description = "Media file", required = true)
@@ -427,13 +403,17 @@ public class TemplateController {
             @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
 
             @Parameter(description = "Meta WABA identifier", example = "109876543210", required = true)
-            @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId) {
+            @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId,
 
-        log.info("Upload template media filename={} size={} projectId={} wabaId={}",
-                file.getOriginalFilename(), file.getSize(), projectId, wabaId);
+            @Parameter(description = "Meta app id the WABA's access token belongs to",
+                    example = "1234567890123456", required = true)
+            @RequestHeader(ApiHeaders.APP_ID) @NotBlank String appId) {
+
+        log.info("Upload template media filename={} size={} projectId={} wabaId={} appId={}",
+                file.getOriginalFilename(), file.getSize(), projectId, wabaId, appId);
 
         ResumableMediaUploadResponseDto response =
-                templateMediaUseCase.uploadMedia(file, projectId, organizationId, wabaId);
+                templateMediaUseCase.uploadMedia(file, projectId, organizationId, wabaId, appId);
 
         return ok(TemplateConstants.Messages.MEDIA_UPLOADED, response);
     }

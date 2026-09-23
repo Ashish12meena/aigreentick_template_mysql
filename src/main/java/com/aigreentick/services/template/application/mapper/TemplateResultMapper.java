@@ -23,6 +23,8 @@ public class TemplateResultMapper {
                 .category(t.getCategory())
                 .language(t.getLanguage())
                 .metaTemplateId(t.getMetaTemplateId())
+                .createdAt(t.getCreatedAt())
+                .updatedAt(t.getUpdatedAt())
                 .build();
     }
 

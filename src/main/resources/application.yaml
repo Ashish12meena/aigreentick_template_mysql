@@ -18,6 +18,12 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       pool-name: template-hikari
+      # Time zone: every timestamp is an Instant stored as UTC. Pinning the
+      # JDBC session to UTC makes DB-side functions (NOW(), CURRENT_TIMESTAMP)
+      # agree with the application, whatever the JVM or MySQL server zone is.
+      data-source-properties:
+        connectionTimeZone: UTC
+        forceConnectionTimeZoneToSession: true
 
   jpa:
     hibernate:
@@ -30,31 +36,31 @@ spring:
         format_sql: true
         jdbc:
           batch_size: 50
+          # Instant <-> DATETIME(6) holding UTC wall-clock time, independent of
+          # the JVM default zone, so servers in different regions agree.
+          time_zone: UTC
+        type:
+          preferred_instant_jdbc_type: TIMESTAMP
         order_inserts: true
         order_updates: true
 
   # --------------------------------------------------------------------------
-  # SERVER-SIDE serialization only.
+  # SERVER-SIDE serialization only: what THIS service's HTTP API emits and
+  # accepts. The API is camelCase (Jackson default, no naming strategy).
   #
-  # This controls what THIS service's own HTTP API emits and accepts. It does
-  # NOT control anything that talks to an upstream, and nothing outside the
-  # web layer should depend on it:
-  #
+  # Nothing that talks to an upstream depends on this block:
   #   - Outbound clients (waba-service, storage-service, Meta) pin an explicit
   #     camelCase ObjectMapper in WebClientConfig.
-  #   - Meta Graph API response parsing pins an explicit snake_case
-  #     ObjectMapper in FacebookJacksonConfig.
-  #   - CreateTemplateUseCaseImpl / UpdateDraftTemplateUseCaseImpl serialize
-  #     the stored payload via JsonHelper, which carries its own mappers.
+  #   - Meta Graph payloads are snake_case: parsed with FacebookJsonMapper and
+  #     serialized with JsonHelper.serializeWithSnakeCase.
   #
-  # Changing the value below is therefore safe for media sync, but it is NOT
-  # safe for consumers. The Messaging Service parses this API as snake_case,
-  # and because fail-on-unknown-properties is off, a mismatch does not throw —
-  # every field deserializes to null. Coordinate any change with that team and
-  # roll it out on a versioned path rather than flipping this in place.
+  # fail-on-unknown-properties is off, so a naming mismatch does not throw -
+  # every field silently deserializes to null. Do not add a global naming
+  # strategy; consumers (including the Messaging Service) read camelCase.
   # --------------------------------------------------------------------------
   jackson:
-    # property-naming-strategy: SNAKE_CASE   # <- see note above before re-enabling
+    serialization:
+      write-dates-as-timestamps: false
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null

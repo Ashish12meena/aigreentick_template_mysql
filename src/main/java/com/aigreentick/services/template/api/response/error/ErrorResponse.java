@@ -41,9 +41,8 @@ import java.util.List;
  *
  * <h2>Serialization</h2>
  *
- * This service applies {@code SNAKE_CASE} globally, so these fields go out as
- * {@code error_code}, {@code trace_id}, {@code field_errors}. That naming is
- * a frozen contract; see {@code application.yaml}.
+ * Fields are serialized camelCase ({@code errorCode}, {@code traceId},
+ * {@code fieldErrors}) like the rest of this API.
  */
 @Data
 @Builder

@@ -29,7 +29,6 @@ public class MetaTemplateSubmissionService {
 
     private final TemplateCommandService commandService;
     private final WhatsappTemplateMapper templateMapper;
-    // private final WabaCredentialAdapter accountClient;
     private final WabaCredentialPort wabaCredentialPort;
     private final FacebookTemplatePort ftp;
 
@@ -75,12 +74,6 @@ public class MetaTemplateSubmissionService {
             return buildErrorResponse(template, fbResponse.getErrorMessage());
         }
 
-        // commandService.markAsSubmitted(template);
-
-        // return TemplateResult.builder()
-        // .id(template)
-        // .build();
-
         return handleFacebookResponse(template, fbResponse.getData());
     }
 
@@ -106,11 +99,14 @@ public class MetaTemplateSubmissionService {
             String errorMsg = jsonData.path("error").path("message").asText("Unknown error");
             log.warn("Facebook error in response for templateId={}: {}", template.getId(), errorMsg);
             commandService.markAsFailed(template, errorMsg, metaResponse);
+            commandService.flush();
             return TemplateResult.builder()
                     .id(template.getId())
                     .name(template.getName())
                     .errorMessage(errorMsg)
                     .errorPayload(jsonData)
+                    .createdAt(template.getCreatedAt())
+                    .updatedAt(template.getUpdatedAt())
                     .build();
         }
 
@@ -122,16 +118,20 @@ public class MetaTemplateSubmissionService {
         if (metaTemplateId == null || status == null) {
             log.warn("Invalid Facebook response for templateId={}", template.getId());
             commandService.markAsFailed(template, "Invalid response from Facebook API", metaResponse);
+            commandService.flush();
             return TemplateResult.builder()
                     .id(template.getId())
                     .name(template.getName())
                     .errorMessage("Invalid response from Facebook API")
                     .errorPayload(jsonData)
+                    .createdAt(template.getCreatedAt())
+                    .updatedAt(template.getUpdatedAt())
                     .build();
         }
 
         // Success
         commandService.markAsNewCreated(template, metaTemplateId, status, metaResponse);
+        commandService.flush();
         log.info("Template submitted to Meta: templateId={} metaId={} status={}",
                 template.getId(), metaTemplateId, status);
 
@@ -139,11 +139,14 @@ public class MetaTemplateSubmissionService {
     }
 
     private TemplateResult buildErrorResponse(WhatsappTemplate template, String message) {
+        commandService.flush();
         return TemplateResult.builder()
                 .id(template.getId())
                 .name(template.getName())
                 .status(template.getStatus())
                 .errorMessage(message)
+                .createdAt(template.getCreatedAt())
+                .updatedAt(template.getUpdatedAt())
                 .build();
     }
 

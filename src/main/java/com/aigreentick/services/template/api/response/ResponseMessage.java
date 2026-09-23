@@ -16,8 +16,7 @@ import lombok.NoArgsConstructor;
  * Service parses on the send path, so the three field names, their order of
  * appearance and the fact that {@code status} is the <em>string</em>
  * {@code "SUCCESS"} rather than a boolean or a number are all part of the
- * contract. Serialization is snake_case like the rest of the surface, though
- * none of these three names is affected by that.
+ * contract.
  *
  * <p>The factory methods below exist because every controller method was
  * previously hand-rolling {@code new ResponseMessage<>(ResponseStatus.SUCCESS.name(), ...)}.

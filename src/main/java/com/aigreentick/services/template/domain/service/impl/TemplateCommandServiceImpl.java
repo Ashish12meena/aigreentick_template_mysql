@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.domain.service.impl;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
@@ -70,11 +71,16 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
         commandRepo.save(template);
     }
 
+    @Override
+    public void flush() {
+        commandRepo.flush();
+    }
+
     // ── Deletes ──
 
     @Override
     public int softDeleteById(Long id, Long projectId) {
-        int deleted = commandRepo.softDeleteById(id, projectId);
+        int deleted = commandRepo.softDeleteById(id, projectId, Instant.now());
         if (deleted == 0) {
             throw new ResourceNotFoundException("Template", "id", id);
         }
@@ -84,7 +90,7 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
 
     @Override
     public int softDeleteAllByProject(Long projectId) {
-        int deleted = commandRepo.softDeleteAllByProject(projectId);
+        int deleted = commandRepo.softDeleteAllByProject(projectId, Instant.now());
         log.info("Bulk soft-deleted {} templates for projectId={}", deleted, projectId);
         return deleted;
     }
@@ -93,7 +99,7 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
     public int softDeleteStaleByMetaIds(Set<String> metaIds, Long projectId) {
         if (metaIds == null || metaIds.isEmpty())
             return 0;
-        return commandRepo.softDeleteStaleByMetaIds(metaIds, projectId);
+        return commandRepo.softDeleteStaleByMetaIds(metaIds, projectId, Instant.now());
     }
 
     // ── Validation ──

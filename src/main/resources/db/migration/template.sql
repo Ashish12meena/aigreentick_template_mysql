@@ -4,6 +4,9 @@ create schema apargo_wa_template;
 
 use apargo_wa_template;
 -- WHATSAPP TEMPLATE SERVICE — ALL TABLES (MYSQL)
+-- Timestamps: every *_at column is DATETIME(6) holding UTC. Values are set
+-- by the application (java.time.Instant via @PrePersist / @PreUpdate), so
+-- there are deliberately no DEFAULT / ON UPDATE clauses here.
 -- 1. whatsapp_templates
 -- Root entity – one row per template per project per WABA
 
@@ -18,11 +21,12 @@ CREATE TABLE whatsapp_templates (
   category ENUM('MARKETING','UTILITY','AUTHENTICATION') NOT NULL,
   language VARCHAR(10) NOT NULL,
 
-  status ENUM('DRAFT','NEW_CREATED','SUBMITTED','PENDING','APPROVED','REJECTED','PAUSED','DISABLED','FAILED') DEFAULT 'PENDING',
+  status ENUM('DRAFT','NEW_CREATED','SUBMITTED','PENDING','APPROVED','REJECTED','PAUSED','DISABLED','FAILED','UNKNOWN') DEFAULT 'PENDING',
   rejection_reason TEXT NULL,
   previous_category ENUM('MARKETING','UTILITY','AUTHENTICATION') NULL,
 
   meta_template_id VARCHAR(150) NULL,
+  meta_status_raw VARCHAR(64) NULL,
 
   quality_rating ENUM('GREEN','YELLOW','RED','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
 
@@ -31,12 +35,12 @@ CREATE TABLE whatsapp_templates (
 
   created_by BIGINT UNSIGNED NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMP NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NULL,
+  deleted_at DATETIME(6) NULL,
 
-  UNIQUE KEY uk_project_template (
-    project_id, name, language
+  UNIQUE KEY uk_waba_template (
+    waba_id, name, language
   ),
 
   INDEX idx_project_status (project_id, status),
@@ -75,7 +79,7 @@ CREATE TABLE whatsapp_template_components (
 
   component_order INT NOT NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   UNIQUE KEY uk_template_component (
     template_id, component_type, component_order
@@ -110,7 +114,7 @@ CREATE TABLE whatsapp_template_buttons (
   
   example JSON NULL COMMENT 'Direct array like ["ORDER123", "ORDER456"]',
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   UNIQUE KEY uk_component_button (
     component_id, button_index
@@ -147,7 +151,7 @@ CREATE TABLE whatsapp_template_examples (
   header_handle JSON NULL COMMENT 'List<String> for header media handles',
   body_text JSON NULL COMMENT 'List<List<String>> for body text variables',
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   FOREIGN KEY (component_id)
     REFERENCES whatsapp_template_components(id)
@@ -161,7 +165,7 @@ CREATE TABLE whatsapp_template_carousel_cards (
   component_id BIGINT UNSIGNED NOT NULL,
   card_index INT NOT NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   UNIQUE KEY uk_component_card (
     component_id, card_index
@@ -186,7 +190,7 @@ CREATE TABLE whatsapp_template_carousel_card_components (
   media_handle VARCHAR(2048) NULL,  
   media_url VARCHAR(500) NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   FOREIGN KEY (card_id)
     REFERENCES whatsapp_template_carousel_cards(id)
@@ -207,7 +211,7 @@ CREATE TABLE whatsapp_template_carousel_buttons (
 
   button_index INT NOT NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   UNIQUE KEY uk_card_button (
     card_component_id, button_index
@@ -229,7 +233,7 @@ CREATE TABLE whatsapp_template_carousel_examples (
   header_handle JSON NULL COMMENT 'List<String> for header media handles',
   body_text JSON NULL COMMENT 'List<List<String>> for body text variables',
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NOT NULL,
 
   FOREIGN KEY (carousel_component_id)
     REFERENCES whatsapp_template_carousel_card_components(id)
@@ -259,9 +263,9 @@ CREATE TABLE whatsapp_template_variables (
   card_index INT NOT NULL DEFAULT -1,
 
   -- Fallback if value is empty at send time
-  label_value VARCHAR(500) NULL,
+  label_value VARCHAR(255) NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME(6) NULL,
 
   UNIQUE KEY uk_var (
     template_id, component_type, variable_index,
@@ -298,8 +302,8 @@ CREATE TABLE whatsapp_template_media_uploads (
 
   upload_response JSON NULL,
 
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP NULL,
+  created_at DATETIME(6) NOT NULL,
+  completed_at DATETIME(6) NULL,
 
   INDEX idx_session (session_id),
   INDEX idx_project (project_id)

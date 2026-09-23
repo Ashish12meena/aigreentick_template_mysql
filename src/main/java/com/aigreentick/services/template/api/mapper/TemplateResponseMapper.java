@@ -22,6 +22,8 @@ public class TemplateResponseMapper {
                 .category(t.getCategory())
                 .language(t.getLanguage())
                 .metaTemplateId(t.getMetaTemplateId())
+                .createdAt(t.getCreatedAt())
+                .updatedAt(t.getUpdatedAt())
                 .build();
     }
 
@@ -38,6 +40,8 @@ public class TemplateResponseMapper {
                 .category(r.getCategory())
                 .language(r.getLanguage())
                 .metaTemplateId(r.getMetaTemplateId())
+                .createdAt(r.getCreatedAt())
+                .updatedAt(r.getUpdatedAt())
                 .build();
     }
 

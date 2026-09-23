@@ -24,8 +24,8 @@ package com.aigreentick.services.template.common.constant;
  *
  * {@link #TEMPLATES} + {@link #TEMPLATE_BY_ID} is consumed by the Messaging
  * Service on the message-send path. It is a live contract: the path, the
- * {@code X-Project-Id} header it requires, and the snake_case response
- * envelope are all fixed. Do not rename, re-shape or re-version it without
+ * {@code X-Project-Id} header it requires, and the
+ * {@code {status, message, data}} response envelope are all fixed. Do not rename, re-shape or re-version it without
  * coordinating a migration with that service first.
  */
 public final class ApiPaths {

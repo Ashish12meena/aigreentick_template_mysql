@@ -4,7 +4,7 @@ package com.aigreentick.services.template.domain.model;
 import jakarta.persistence.*;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import com.aigreentick.services.template.domain.enums.MediaType;
 import com.aigreentick.services.template.domain.enums.UploadStatus;
@@ -64,13 +64,13 @@ public class WhatsappTemplateMediaUpload {
     private String uploadResponse;
     
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
     
     @Column(name = "completed_at")
-    private LocalDateTime completedAt;
+    private Instant completedAt;
     
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        createdAt = Instant.now();
     }
 }

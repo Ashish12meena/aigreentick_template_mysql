@@ -23,6 +23,13 @@ public interface TemplateCommandService {
     void markAsFailed(WhatsappTemplate template, String errorMessage, String metaResponse);
 
     void markAsNewCreated(WhatsappTemplate template, String metaTemplateId, String status, String metaResponse);
+
+    /**
+     * Flushes pending changes so {@code @PreUpdate} has run and the entity's
+     * {@code updatedAt} reflects this write before it is returned to the caller.
+     */
+    void flush();
+
     // ── Deletes ──
 
     int softDeleteById(Long id, Long projectId);

@@ -12,7 +12,7 @@ import com.aigreentick.services.template.api.response.media.UploadSessionRespons
 public interface FacebookMediaUploadPort {
 
     FacebookApiResponse<UploadSessionResponse> initiateUploadSession(
-            String fileName, long fileSize, String mimeType, String wabaAppId, String accessToken);
+            String fileName, long fileSize, String mimeType, String appId, String accessToken);
 
     FacebookApiResponse<UploadMediaResponse> uploadResumableMediaToFacebook(
             String sessionId, File file, String accessToken, String offset) throws IOException;

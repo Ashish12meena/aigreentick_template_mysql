@@ -12,6 +12,10 @@ import com.aigreentick.services.template.api.response.media.ResumableMediaUpload
  */
 public interface WhatsappTemplateMediaUseCase {
 
+    /**
+     * @param wabaId WABA whose access token (from waba-service) authorises the upload
+     * @param appId  Meta app id the upload session is opened on ({@code /{appId}/uploads})
+     */
     ResumableMediaUploadResponseDto uploadMedia(
-            MultipartFile file, Long projectId, Long organizationId, String wabaId);
+            MultipartFile file, Long projectId, Long organizationId, String wabaId, String appId);
 }

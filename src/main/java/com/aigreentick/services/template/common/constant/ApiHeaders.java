@@ -37,6 +37,14 @@ public final class ApiHeaders {
     /** Meta's globally unique WhatsApp Business Account id. */
     public static final String WABA_ID = "X-Waba-Id";
 
+    /**
+     * Meta app id. Required only by the media upload endpoint: Meta's
+     * Resumable Upload API opens a session on {@code /{app-id}/uploads}, and
+     * the app must be the one the WABA's access token was issued for. A
+     * wrong value is rejected by Meta; it grants nothing.
+     */
+    public static final String APP_ID = "X-App-Id";
+
     /** Correlation id propagated across services. */
     public static final String REQUEST_ID = "X-Request-Id";
 

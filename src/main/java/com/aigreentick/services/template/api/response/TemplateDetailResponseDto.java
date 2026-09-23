@@ -1,6 +1,6 @@
 package com.aigreentick.services.template.api.response;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
@@ -29,8 +29,8 @@ public class TemplateDetailResponseDto {
     private TemplateQualityRating qualityRating;
     private String rejectionReason;
     private Long createdBy;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private Instant createdAt;
+    private Instant updatedAt;
 
     private List<ComponentDto> components;
     private List<VariableDto> variables;

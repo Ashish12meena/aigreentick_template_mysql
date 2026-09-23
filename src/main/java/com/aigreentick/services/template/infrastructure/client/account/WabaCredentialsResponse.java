@@ -22,9 +22,9 @@ import lombok.Setter;
  *
  * <h2>Field naming</h2>
  *
- * waba-service serializes camelCase. This service's own API is snake_case,
- * so the decoder for this client is pinned explicitly in
- * {@code WebClientConfig} rather than inheriting the global setting.
+ * waba-service serializes camelCase. The decoder for this client is pinned
+ * explicitly in {@code WebClientConfig} rather than inheriting the global
+ * Jackson setting.
  */
 @Getter
 @Setter

@@ -45,8 +45,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class MediaSyncService {
 
-    // private final MediaSyncClient mediaClient;
-    // After
     private final FacebookMediaDownloadService mediaDownloader;
     private final InternalMediaPort mediaUploader;
     private final MediaServiceProperties batchConfig;
@@ -63,7 +61,7 @@ public class MediaSyncService {
         this.mediaSyncExecutor = mediaSyncExecutor;
     }
 
-    // ── Public API (signatures unchanged) ──
+    // ── Public API ──
 
     /**
      * Resolves all media in a single synced template.
@@ -371,7 +369,7 @@ public class MediaSyncService {
         return mapped;
     }
 
-    // ── Task collection (UNCHANGED) ──
+    // ── Task collection ──
 
     List<MediaTask> collectMediaTasks(
             WhatsappTemplate template, Long orgId, Long projectId, String wabaId) {
@@ -447,7 +445,7 @@ public class MediaSyncService {
         }
     }
 
-    // ── Helpers (UNCHANGED) ──
+    // ── Helpers ──
 
     private boolean isMediaFormat(ComponentFormat format) {
         return format == ComponentFormat.IMAGE

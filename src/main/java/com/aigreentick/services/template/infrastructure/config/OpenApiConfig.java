@@ -34,7 +34,7 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("Template Service API")
                         .description("WhatsApp message template management for Apargo/Aigreentick modules. "
-                                + "Note: all request and response bodies use snake_case field names.")
+                                + "Request and response bodies use camelCase field names.")
                         .version("v1")
                         .contact(new Contact().name("Apargo Platform Team")))
                 .components(new Components()

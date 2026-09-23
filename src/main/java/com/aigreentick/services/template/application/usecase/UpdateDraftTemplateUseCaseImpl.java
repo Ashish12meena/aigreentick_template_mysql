@@ -86,6 +86,7 @@ public class UpdateDraftTemplateUseCaseImpl implements UpdateDraftTemplateUseCas
 
         // Step 6: Save
         WhatsappTemplate saved = commandService.save(existing);
+        commandService.flush(); // run @PreUpdate so the response carries the new updatedAt
 
         int componentCount = saved.getComponents() != null ? saved.getComponents().size() : 0;
         int variableCount = saved.getVariables() != null ? saved.getVariables().size() : 0;

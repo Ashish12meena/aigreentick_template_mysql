@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.domain.repository;
 
+import java.time.Instant;
 import java.util.Set;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,32 +23,35 @@ public interface WhatsappTemplateCommandRepository extends JpaRepository<Whatsap
     @Modifying
     @Query("""
             UPDATE WhatsappTemplate t
-            SET t.deletedAt = CURRENT_TIMESTAMP
+            SET t.deletedAt = :deletedAt
             WHERE t.id = :id
               AND t.projectId = :projectId
               AND t.deletedAt IS NULL
             """)
     int softDeleteById(
             @Param("id") Long id,
-            @Param("projectId") Long projectId);
+            @Param("projectId") Long projectId,
+            @Param("deletedAt") Instant deletedAt);
 
     // ── Bulk soft-delete by project ──
 
     @Modifying
     @Query("""
             UPDATE WhatsappTemplate t
-            SET t.deletedAt = CURRENT_TIMESTAMP
+            SET t.deletedAt = :deletedAt
             WHERE t.projectId = :projectId
               AND t.deletedAt IS NULL
             """)
-    int softDeleteAllByProject(@Param("projectId") Long projectId);
+    int softDeleteAllByProject(
+            @Param("projectId") Long projectId,
+            @Param("deletedAt") Instant deletedAt);
 
     // ── Sync: soft-delete stale templates by meta IDs ──
 
     @Modifying
     @Query("""
             UPDATE WhatsappTemplate t
-            SET t.deletedAt = CURRENT_TIMESTAMP
+            SET t.deletedAt = :deletedAt
             WHERE t.metaTemplateId IN :metaIds
               AND t.projectId = :projectId
               AND t.status <> 'DRAFT'
@@ -55,5 +59,6 @@ public interface WhatsappTemplateCommandRepository extends JpaRepository<Whatsap
             """)
     int softDeleteStaleByMetaIds(
             @Param("metaIds") Set<String> metaIds,
-            @Param("projectId") Long projectId);
+            @Param("projectId") Long projectId,
+            @Param("deletedAt") Instant deletedAt);
 }

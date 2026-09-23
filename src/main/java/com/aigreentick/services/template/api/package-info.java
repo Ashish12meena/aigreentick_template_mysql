@@ -2,7 +2,7 @@
  * API boundary — HTTP controllers, request/response DTOs, and the
  * mappers between them and the application layer.
  *
- * Rules (see RULES.md):
+ * Rules (see src/main/resources/docs/rules.md):
  *  - This is the ONLY layer allowed to know HTTP exists (status codes,
  *    headers, {@code @RequestBody}, etc).
  *  - Controllers depend on {@code application.port.in} interfaces only —

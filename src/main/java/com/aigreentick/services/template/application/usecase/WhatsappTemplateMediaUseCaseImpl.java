@@ -28,14 +28,12 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUseCase {
-    // private final WhatsappTemplateMediaServiceImpl templateMediaServiceImpl;
     private final WabaCredentialPort wClient;
-    // private final FacebookTemplateAdapter fApiClient;
     private final FacebookMediaUploadPort fmup;
 
     public ResumableMediaUploadResponseDto uploadMedia(
             MultipartFile file, Long projectId, Long organizationId,
-            String wabaId) {
+            String wabaId, String appId) {
 
         AccessTokenIdentifier accessTokenIdentifier = wClient.getWhatsappAccountWabaAccessToken(wabaId,new TenantScope(organizationId, projectId));
         String offset = "0";
@@ -47,7 +45,7 @@ public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUs
 
             FacebookApiResponse<UploadSessionResponse> sessionResponse = fmup.initiateUploadSession(
                     fileMeta.getFileName(), fileMeta.getFileSize(), fileMeta.getMimeType(),
-                    wabaId, accessTokenIdentifier.getAccessToken());
+                    appId, accessTokenIdentifier.getAccessToken());
 
             if (!sessionResponse.isSuccess()) {
                 throw new ExternalServiceException(sessionResponse.getErrorMessage());
@@ -62,9 +60,6 @@ public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUs
                 throw new ExternalServiceException(sessionResponse.getErrorMessage());
             }
 
-            // WhatsappTemplateMediaUpload media = saveMediaRecord(projectId, sessionId, fileMeta,
-            //         uploadMediaResponse.getData().getFacebookImageUrl());
-
             return ResumableMediaUploadResponseDto.builder()
             .fileName(fileMeta.getFileName())
             .fileSize(fileMeta.getFileSize())
@@ -72,8 +67,6 @@ public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUs
             .mediaUrl(uploadMediaResponse.getData().getFacebookImageUrl())
             .sessionId(sessionId)
             .build();
-
-            // return toDto(media);
 
         } catch (IOException ex) {
             throw new MediaUploadException("Failed to upload file", ex);
@@ -86,16 +79,6 @@ public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUs
             }
         }
     }
-
-    // private ResumableMediaUploadResponseDto toDto(WhatsappTemplateMediaUpload media) {
-    //     return ResumableMediaUploadResponseDto.builder()
-    //             .fileName(media.getFileName())
-    //             .fileSize(media.getFileSize())
-    //             .mimeType(media.getMimeType())
-    //             .mediaUrl(media.getMediaHandle())
-    //             .sessionId(media.getSessionId())
-    //             .build();
-    // }
 
     private FacebookApiResponse<UploadMediaResponse> tryUploadToFacebook(
             String sessionId, File file, String accessToken, String offset) {
@@ -121,11 +104,6 @@ public class WhatsappTemplateMediaUseCaseImpl implements WhatsappTemplateMediaUs
                 file.getSize(),
                 file.getContentType());
     }
-
-    // private WhatsappTemplateMediaUpload saveMediaRecord(Long userId, String sessionId, FileMetaData meta, String handle) {
-    //     WhatsappTemplateMediaUpload media = new WhatsappTemplateMediaUpload();
-    //     return templateMediaServiceImpl.save(media);
-    // }
 
     private File convertMultipartToFile(MultipartFile file) throws IOException {
         File convFile = File.createTempFile("upload_", Objects.requireNonNull(file.getOriginalFilename()));

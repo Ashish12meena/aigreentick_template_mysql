@@ -30,31 +30,19 @@ import java.util.concurrent.TimeUnit;
 /**
  * Outbound HTTP clients, one per upstream.
  *
- * <h2>The naming-strategy trap this class exists to close</h2>
+ * <h2>Why every client pins its own ObjectMapper</h2>
  *
- * This service sets {@code spring.jackson.property-naming-strategy:
- * SNAKE_CASE} globally, because its own public API is snake_case and that is
- * a frozen contract. But <em>none</em> of its upstreams are: waba-service and
- * storage-service both serialize camelCase.
+ * waba-service and storage-service serialize camelCase. Each client below
+ * configures its codecs with an <em>explicit</em> camelCase
+ * {@link ObjectMapper} instead of inheriting Spring Boot's context mapper, so
+ * a future {@code spring.jackson} change cannot silently alter how upstream
+ * responses decode. {@code fail-on-unknown-properties} is off, so a naming
+ * mismatch would not throw: a credential lookup would return a {@code null}
+ * token ("credentials not found") and a batch media upload would return
+ * {@code null} URLs (templates silently missing their media).
  *
- * <p>Previously that mismatch was avoided entirely by accident. The
- * {@code WebClient.Builder} bean here was declared as a bare
- * {@code WebClient.builder()}, which does <strong>not</strong> pick up
- * Spring Boot's context {@link ObjectMapper} and therefore fell back to
- * Jackson defaults — camelCase — which happened to be correct. Nothing said
- * so. Anyone injecting Spring Boot's auto-configured
- * {@code WebClient.Builder} instead, or adding
- * {@code spring.jackson} customisation, would have silently switched these
- * clients to snake_case decoding. The symptom would not have been an
- * exception: {@code fail-on-unknown-properties} is off, so every field would
- * simply deserialize to {@code null}. A credential lookup would return a
- * token of {@code null} and surface as "credentials not found"; a batch
- * media upload would return URLs of {@code null} and surface as templates
- * silently missing their images.
- *
- * <p>Each client below therefore configures its codecs with an
- * <em>explicit</em> camelCase {@link ObjectMapper}. The behaviour is
- * unchanged; it is now stated rather than inherited by luck.
+ * <p>Meta Graph payloads are snake_case; they are read as {@code JsonNode}
+ * and bound with {@code FacebookJsonMapper}, not with these codecs.
  *
  * <h2>Timeouts and buffer limits are per-upstream</h2>
  *

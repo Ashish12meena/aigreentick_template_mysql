@@ -25,8 +25,8 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
  * public API would then serialize through the Meta mapper.
  *
  * <p>That failure is quiet and easy to misread. The symptoms are snake_case
- * responses that ignore the yaml setting, {@code LocalDateTime} rendered as
- * {@code [2026,8,27,22,40,27]} instead of ISO-8601 (Boot disables
+ * responses that ignore the yaml setting, {@code Instant} rendered as a numeric
+ * epoch value such as {@code 1788000027.000000000} instead of ISO-8601 (Boot disables
  * {@code WRITE_DATES_AS_TIMESTAMPS}; a hand-built mapper does not), and null
  * fields appearing despite {@code default-property-inclusion: non_null}.
  * Those three together are the fingerprint of the auto-configuration having

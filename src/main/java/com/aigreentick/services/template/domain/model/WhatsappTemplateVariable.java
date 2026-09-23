@@ -2,11 +2,10 @@ package com.aigreentick.services.template.domain.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
 
 import com.aigreentick.services.template.domain.enums.VariableComponentType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(
@@ -53,7 +52,11 @@ public class WhatsappTemplateVariable {
     @Column(name = "label_value", length = 255)
     private String labelValue;
 
-    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = Instant.now();
+    }
 }
