@@ -2,7 +2,7 @@
 
 Describes what the service does **today**, derived from the implementation.
 Items marked *(inferred)* are reasoned from code, not from a written business
-spec; confirm them with the product owner. Last reviewed: 2026-09-23.
+spec; confirm them with the product owner. Last reviewed: 2026-09-24.
 
 ## 1. Purpose
 
@@ -71,23 +71,26 @@ pulled by sync, not pushed); template analytics; audit trail; notifications.
 ### FR-1 Create template — `POST /api/v1/templates`
 - Input: `template` (`name`, `language`, `category`, `components`),
   optional `variables`, and `draft` (boolean, default `false`).
+- Requires `X-Idempotency-Key`; a repeat with the same key returns the first
+  response (HTTP 200) instead of creating again.
 - Validates bean constraints (name ≤ 150 chars, language ≤ 10 chars,
   component text ≤ 4096 chars, required fields) and then **all Meta rules**
-  (FR-10); every violation is returned together (HTTP 422).
+  (FR-10); every violation is returned together (HTTP 422 `VALIDATION_FAILED`).
 - Rejects a duplicate: another non-draft template with the same WABA + name +
-  language → HTTP 409.
+  language → HTTP 409 `TEMPLATE_ALREADY_EXISTS`.
 - Always saves the template first as `DRAFT`, storing the Meta-ready
   snake_case payload.
 - If `draft = true`: returns immediately.
 - If `draft = false`: submits to Meta (FR-5) in the same request.
-- Response includes `id`, `name`, `status`, `category`, `language`,
-  `metaTemplateId`, `createdAt`, `updatedAt`.
+- Response: **201 Created** with `Location: /api/v1/templates/{id}`; `data`
+  includes `id`, `name`, `status`, `category`, `language`, `metaTemplateId`,
+  `createdAt`, `updatedAt` (and `errorMessage`/`errorPayload` if Meta rejected it).
 
 ### FR-2 Get template by id — `GET /api/v1/templates/{templateId}`
 - Returns the full template: metadata, components (examples, buttons,
   supported apps, carousel cards and card components), variables,
-  `createdAt`, `updatedAt`. 404 if not in the caller's project.
-- **Frozen contract** for the Messaging Service; an authenticated twin exists at
+  `createdAt`, `updatedAt`. 404 `TEMPLATE_NOT_FOUND` if not in the caller's project.
+- Read by the Messaging Service on the send path; an authenticated twin exists at
   `GET /internal/v1/templates/{templateId}` with an identical body.
 
 ### FR-3 Look up template — `GET /api/v1/templates/lookup?name=&language=`
@@ -95,22 +98,27 @@ pulled by sync, not pushed); template analytics; audit trail; notifications.
   Internal twin: `GET /internal/v1/templates/lookup`.
 
 ### FR-4 List templates — `GET /api/v1/templates/my-templates`
-- Paginated list for the caller's project.
+- Page-based list for the caller's project; `data = {items, pagination}`.
 - Filters: `status`, `category`, `search` (case-insensitive substring of name).
-- Paging: `page` (default 0), `size` (default 10, max 100).
-- Sorting: `sortBy` (entity field, default `createdAt`), `sortDir` (`asc`/`desc`, default `desc`).
+- Paging: `page` (from 0, default 0), `size` (1–100, default 20).
+- Sorting: `sort` ∈ `createdAt` (default), `updatedAt`, `name`, `status`,
+  `category`, `language`; `order` `asc`/`desc` (default `desc`). `id` is
+  always the tie-breaker, so paging is stable.
+- Invalid `page`, `size`, `sort`, `order` or filter value → 422
+  `VALIDATION_FAILED`. A page past the end → 200 with `items: []`.
 - Each item: `id`, `name`, `status`, `category`, `language`,
   `metaTemplateId`, `createdAt`, `updatedAt`.
 
 ### FR-5 Submit draft to Meta — `POST /api/v1/templates/{templateId}/submit`
-- Only for `DRAFT` templates (else 422 `INVALID_TEMPLATE_STATE`); requires a
+- Requires `X-Idempotency-Key` (a repeat replays the first response).
+- Only for `DRAFT` templates (else 409 `TEMPLATE_INVALID_STATE`); requires a
   stored payload.
 - Marks `SUBMITTED`, fetches the WABA token from waba-service, posts to Meta.
 - On success: stores Meta's template id, status and category, and the raw
   Meta response.
-- On Meta error: marks `FAILED`, stores the reason, and returns **HTTP 200 with
-  envelope `status: "ERROR"`** and the template data, because the template
-  exists locally and a retry must not create a duplicate.
+- On Meta error: marks `FAILED`, stores the reason, and returns **HTTP 200**
+  (`success: true`) with `data.status = FAILED` and `data.errorMessage`, because
+  the call did change the template and a retry must not create a duplicate.
 
 ### FR-6 Update draft — `PUT /api/v1/templates/{templateId}/draft`
 - Only for `DRAFT` templates. Replaces name, category, language, WABA,
@@ -118,15 +126,18 @@ pulled by sync, not pushed); template analytics; audit trail; notifications.
 - Returns the same shape as FR-1, with the new `updatedAt`.
 
 ### FR-7 Delete — `DELETE /api/v1/templates/{templateId}?deleteFromMeta=false`
-- Soft-deletes one template in the caller's project (404 if absent).
+- Soft-deletes one template in the caller's project: **204 No Content**
+  (404 `TEMPLATE_NOT_FOUND` if absent).
 - `deleteFromMeta=true` also deletes it on Meta **by name** when it has a
   Meta id; Meta failures are logged and do not block the local delete.
   *(Note: Meta's delete-by-name removes all languages of that name.)*
 - `DELETE /api/v1/templates` soft-deletes **all** templates in the project
-  (local only). Response: `deletedCount`, `projectId`, `templateId`.
+  (local only). Response: 200 with `data.deletedCount`.
 
 ### FR-8 Sync from Meta — `POST /api/v1/templates/sync`
-- Returns **202** immediately; work runs in the background.
+- Returns **202** immediately with `data = {jobId, statusUrl}`: `jobId` is the
+  request id (it tags every log line of the background job) and `statusUrl`
+  is the template list.
 - Fetches every template of the WABA from Meta (pages of 200).
 - New on Meta → inserted locally, including components and media.
 - Existing → status, category, previous category and rejection reason
@@ -176,21 +187,34 @@ Collected in one response with `field`, `code` (`META_*`), `message`:
   unique key; the application pre-check ignores drafts.
 - BR-3 Only drafts can be edited or submitted. Submitted/approved templates are immutable here.
 - BR-4 Templates are never hard-deleted.
-- BR-5 A Meta rejection after a local save is a partial success (HTTP 200,
-  `status: "ERROR"`), not an error response.
+- BR-5 A Meta rejection after a local save is a successful call (2xx,
+  `success: true`) whose `data` carries `status: FAILED` and `errorMessage`;
+  it is never an error response.
 - BR-6 All timestamps are UTC instants (ISO-8601 with `Z`).
 
 ## 7. API conventions
 
-- camelCase JSON; success envelope `{status, message, data}`; error envelope
-  `{status, code, errorCode, message, path, timestamp, traceId, fieldErrors}`.
-- Machine-readable `errorCode` values: `VALIDATION_FAILED`, `INVALID_REQUEST`,
-  `MALFORMED_REQUEST_BODY`, `MISSING_PARAMETER`, `RESOURCE_NOT_FOUND`,
-  `ENDPOINT_NOT_FOUND`, `METHOD_NOT_ALLOWED`, `UNAUTHORIZED`, `PAYLOAD_TOO_LARGE`,
-  `DUPLICATE_RESOURCE`, `INVALID_TEMPLATE_STATE`, `TEMPLATE_RULE_VIOLATION`,
-  `UPSTREAM_META_API_FAILED`, `UPSTREAM_CREDENTIAL_UNAVAILABLE`,
-  `UPSTREAM_MEDIA_UPLOAD_FAILED`, `INTERNAL_ERROR`.
-- Correlation: `X-Request-Id` accepted and echoed.
+The service follows the company **API Standard** (headers, request format,
+response wrapper, status codes, pagination, error format).
+
+- camelCase JSON; enums `UPPER_SNAKE_CASE`; times ISO-8601 UTC.
+- Headers: `X-Org-Id` and `X-Project-Id` required on every business endpoint;
+  `X-User-Id` optional; `X-Request-Id` optional (generated if absent, always
+  echoed, the only tracking header); `X-Idempotency-Key` required on create
+  and submit. Service-specific: `X-Waba-Id`, `X-App-Id`.
+- Every JSON response (success and error) is
+  `{success, status, code, message, data, errors, meta}`; `status` always
+  equals the HTTP status; success has `code: "SUCCESS"`; lists are
+  `data = {items, pagination}`. `204` responses have no body.
+- Error `code` values: `BAD_REQUEST`, `UNAUTHENTICATED`, `NOT_FOUND`,
+  `CONFLICT`, `VALIDATION_FAILED`, `INTERNAL_ERROR`, `DEPENDENCY_FAILURE`,
+  `TIMEOUT`, `METHOD_NOT_ALLOWED`, `PAYLOAD_TOO_LARGE`,
+  `UNSUPPORTED_MEDIA_TYPE`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_ALREADY_EXISTS`,
+  `TEMPLATE_INVALID_STATE`, `WABA_CREDENTIALS_UNAVAILABLE`,
+  `MEDIA_UPLOAD_FAILED`, `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_IN_PROGRESS`,
+  `IDEMPOTENCY_KEY_REUSED` (the idempotency codes are shared with storage-service).
+- Field codes in `errors[].code`: the standard's `REQUIRED`, `INVALID_FORMAT`,
+  `INVALID_VALUE`, `TOO_LONG`, `OUT_OF_RANGE`; Meta rules keep `META_*`.
 - OpenAPI at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`.
 
 Full endpoint table: `architecture.md` §5.

@@ -1,8 +1,9 @@
 package com.aigreentick.services.template.api.internal.v1;
 
 import com.aigreentick.services.template.api.mapper.TemplateDetailResponseMapper;
-import com.aigreentick.services.template.api.response.ResponseMessage;
 import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
+import com.aigreentick.services.template.api.response.common.ApiEnvelope;
+import com.aigreentick.services.template.api.response.common.Responses;
 import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 import com.aigreentick.services.template.application.port.in.GetTemplateUseCase;
 import com.aigreentick.services.template.common.constant.ApiHeaders;
@@ -38,10 +39,11 @@ import org.springframework.web.bind.annotation.RestController;
  * GET /internal/v1/templates/lookup?name=...&amp;language=...
  *
  * X-Internal-Api-Key: &lt;shared secret&gt;
+ * X-Org-Id:           55
  * X-Project-Id:       101
  * X-Waba-Id:          109876543210   (lookup only)
  * X-Internal-Caller:  messaging-service
- * X-Request-Id:       &lt;correlation id&gt;
+ * X-Request-Id:       &lt;passed on unchanged from the original request&gt;
  * </pre>
  *
  * <h2>Why this exists alongside the identical public endpoint</h2>
@@ -49,8 +51,9 @@ import org.springframework.web.bind.annotation.RestController;
  * The Messaging Service currently reads templates through
  * {@code GET /api/v1/templates/{templateId}}, which is unauthenticated and
  * shares a route, a rate limit and a CORS policy with the browser-facing
- * surface. That endpoint is a live contract and is <em>unchanged</em>; this
- * one is the authenticated equivalent it can move to when convenient.
+ * surface. That endpoint is a live contract; this one is the authenticated
+ * equivalent it can move to when convenient. Both return the standard
+ * wrapper (API Standard §4).
  *
  * <p>The response body is deliberately identical, so migrating is a change of
  * base URL plus one header — not a parsing change. Once Messaging has moved,
@@ -87,15 +90,18 @@ public class InternalTemplateController {
     @GetMapping(ApiPaths.TEMPLATE_BY_ID)
     @Operation(summary = "Get a template by id",
             description = "Authenticated equivalent of GET /api/v1/templates/{templateId}. "
-                    + "Response body is byte-for-byte the same shape.")
+                    + "Response body is the same standard wrapper and payload.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Found"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid internal API key"),
-            @ApiResponse(responseCode = "404", description = "No such template in this project")
+            @ApiResponse(responseCode = "401", description = "UNAUTHENTICATED: missing or invalid internal API key"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND")
     })
-    public ResponseEntity<ResponseMessage<TemplateDetailResponseDto>> getById(
+    public ResponseEntity<ApiEnvelope<TemplateDetailResponseDto>> getById(
             @Parameter(description = "Template identifier", example = "1024", required = true)
             @PathVariable @NotNull @Positive Long templateId,
+
+            @Parameter(description = "Organization the caller is acting for", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
 
             @Parameter(description = "Project the caller is acting for", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
@@ -103,12 +109,12 @@ public class InternalTemplateController {
             @Parameter(description = "Calling service name, for audit trails")
             @RequestHeader(value = InternalHeaders.CALLER_SERVICE, required = false) String caller) {
 
-        log.info("Internal template read templateId={} projectId={} caller={}", templateId, projectId, caller);
+        log.info("Internal template read templateId={} organizationId={} projectId={} caller={}",
+                templateId, organizationId, projectId, caller);
 
         TemplateDetailResult template = getTemplateUseCase.getById(templateId, projectId);
-        return ResponseEntity.ok(ResponseMessage.success(
-                TemplateConstants.Messages.TEMPLATE_FETCHED,
-                templateDetailResponseMapper.mapToDetailResponse(template)));
+        return Responses.ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
+                templateDetailResponseMapper.mapToDetailResponse(template));
     }
 
     /**
@@ -124,10 +130,13 @@ public class InternalTemplateController {
             description = "Resolves a template by its natural key within a WABA.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Found"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid internal API key"),
-            @ApiResponse(responseCode = "404", description = "No matching template")
+            @ApiResponse(responseCode = "401", description = "UNAUTHENTICATED: missing or invalid internal API key"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND")
     })
-    public ResponseEntity<ResponseMessage<TemplateDetailResponseDto>> lookup(
+    public ResponseEntity<ApiEnvelope<TemplateDetailResponseDto>> lookup(
+            @Parameter(description = "Organization the caller is acting for", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
             @Parameter(description = "Project the caller is acting for", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
@@ -143,12 +152,11 @@ public class InternalTemplateController {
             @Parameter(description = "Calling service name, for audit trails")
             @RequestHeader(value = InternalHeaders.CALLER_SERVICE, required = false) String caller) {
 
-        log.info("Internal template lookup name={} language={} projectId={} wabaId={} caller={}",
-                name, language, projectId, wabaId, caller);
+        log.info("Internal template lookup name={} language={} organizationId={} projectId={} wabaId={} caller={}",
+                name, language, organizationId, projectId, wabaId, caller);
 
         TemplateDetailResult template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
-        return ResponseEntity.ok(ResponseMessage.success(
-                TemplateConstants.Messages.TEMPLATE_FETCHED,
-                templateDetailResponseMapper.mapToDetailResponse(template)));
+        return Responses.ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
+                templateDetailResponseMapper.mapToDetailResponse(template));
     }
 }

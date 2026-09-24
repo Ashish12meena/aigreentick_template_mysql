@@ -1,5 +1,6 @@
 package com.aigreentick.services.template.infrastructure.config;
 
+import com.aigreentick.services.template.common.logging.MdcTaskDecorator;
 import com.aigreentick.services.template.infrastructure.config.properties.MediaSyncProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +63,8 @@ public class MediaSyncThreadPoolConfig {
         executor.setThreadNamePrefix(properties.getThreadNamePrefix());
         executor.setAllowCoreThreadTimeOut(true);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // Keeps X-Request-Id and tenancy in logs and outbound calls made by sync work.
+        executor.setTaskDecorator(new MdcTaskDecorator());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds((int) properties.getAwaitTerminationSeconds());
         executor.initialize();

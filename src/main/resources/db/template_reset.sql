@@ -4,7 +4,8 @@
 --
 -- Table list derived from the JPA entities in
 --   com.aigreentick.services.template.domain.model
--- (11 entities, 11 tables). Order is leaf -> root:
+-- (11 entities, 11 tables) plus infrastructure.idempotency.IdempotencyRecord
+-- (api_idempotency_keys). Order is leaf -> root:
 --
 --   button_supported_apps -> buttons -> components
 --   carousel_buttons -> carousel_card_components -> carousel_cards -> components
@@ -13,6 +14,7 @@
 --   components -> templates
 --   variables -> templates
 --   media_uploads (standalone, no FK)
+--   api_idempotency_keys (standalone, no FK)
 --
 -- FOREIGN_KEY_CHECKS is toggled off as a belt-and-braces measure so the
 -- script still succeeds if Hibernate named a constraint differently than
@@ -43,6 +45,7 @@ DROP TABLE IF EXISTS whatsapp_templates;
 
 -- Standalone (no FK to any of the above)
 DROP TABLE IF EXISTS whatsapp_template_media_uploads;
+DROP TABLE IF EXISTS api_idempotency_keys;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -50,4 +53,4 @@ SET FOREIGN_KEY_CHECKS = 1;
 SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
-  AND table_name LIKE 'whatsapp_template%';
+  AND (table_name LIKE 'whatsapp_template%' OR table_name = 'api_idempotency_keys');

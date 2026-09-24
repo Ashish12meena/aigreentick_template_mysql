@@ -7,6 +7,7 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aigreentick.services.template.common.error.ErrorCode;
 import com.aigreentick.services.template.common.exception.DuplicateResourceException;
 import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
@@ -82,7 +83,7 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
     public int softDeleteById(Long id, Long projectId) {
         int deleted = commandRepo.softDeleteById(id, projectId, Instant.now());
         if (deleted == 0) {
-            throw new ResourceNotFoundException("Template", "id", id);
+            throw new ResourceNotFoundException(ErrorCode.TEMPLATE_NOT_FOUND, "Template", "id", id);
         }
         log.info("Soft-deleted template id={} projectId={}", id, projectId);
         return deleted;
@@ -107,7 +108,7 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
     @Override
     public void ensureNoDuplicate(String wabaId, String name, String language, Long excludeTemplateId) {
         if (queryService.existsNonDraft(wabaId, name, language, excludeTemplateId)) {
-            throw new DuplicateResourceException(String.format(
+            throw new DuplicateResourceException(ErrorCode.TEMPLATE_ALREADY_EXISTS, String.format(
                     "Template '%s' (%s) already exists on WABA %s", name, language, wabaId));
         }
     }

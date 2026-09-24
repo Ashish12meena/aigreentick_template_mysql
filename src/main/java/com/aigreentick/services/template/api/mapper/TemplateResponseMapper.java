@@ -4,32 +4,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import com.aigreentick.services.template.api.response.TemplateResponseDto;
+import com.aigreentick.services.template.api.response.common.PageResponse;
 import com.aigreentick.services.template.application.dto.result.TemplateSummaryResult;
-import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 
 /**
- * Maps WhatsappTemplate entities to list-level response DTOs.
- * Keeps repository queries returning entities (not DTOs) for clean separation.
+ * Maps list-level use-case results to the REST response shape.
  */
 @Component
 public class TemplateResponseMapper {
-
-    public TemplateResponseDto toListItem(WhatsappTemplate t) {
-        return TemplateResponseDto.builder()
-                .id(t.getId())
-                .name(t.getName())
-                .status(t.getStatus())
-                .category(t.getCategory())
-                .language(t.getLanguage())
-                .metaTemplateId(t.getMetaTemplateId())
-                .createdAt(t.getCreatedAt())
-                .updatedAt(t.getUpdatedAt())
-                .build();
-    }
-
-    public Page<TemplateResponseDto> toPage(Page<WhatsappTemplate> page) {
-        return page.map(this::toListItem);
-    }
 
     /** Converts a use-case result (application layer) into the REST response shape. */
     public TemplateResponseDto toResponseDto(TemplateSummaryResult r) {
@@ -45,8 +27,8 @@ public class TemplateResponseMapper {
                 .build();
     }
 
-    /** Converts a page of use-case results into a page of REST response DTOs. */
-    public Page<TemplateResponseDto> toResponsePage(Page<TemplateSummaryResult> page) {
-        return page.map(this::toResponseDto);
+    /** Converts a page of use-case results into the standard {@code {items, pagination}} list payload. */
+    public PageResponse<TemplateResponseDto> toPageResponse(Page<TemplateSummaryResult> page) {
+        return PageResponse.from(page, this::toResponseDto);
     }
 }

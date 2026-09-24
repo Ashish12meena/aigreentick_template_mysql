@@ -9,6 +9,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.aigreentick.services.template.common.error.ErrorCode;
 import com.aigreentick.services.template.common.exception.InvalidTemplateStateException;
 import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
@@ -30,7 +31,7 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     public WhatsappTemplate getByIdAndProject(Long id, Long projectId) {
         return queryRepo.findByIdAndProjectId(id, projectId)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Template", "id", id));
+                        ErrorCode.TEMPLATE_NOT_FOUND, "Template", "id", id));
     }
 
     @Override
@@ -39,6 +40,7 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
         return queryRepo.findByWabaIdAndNameAndLanguageAndProjectId(
                 wabaId, name, language, projectId)
                 .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.TEMPLATE_NOT_FOUND,
                         String.format("Template not found: name='%s' language='%s'", name, language)));
     }
 
@@ -58,9 +60,10 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
             Long projectId, TemplateStatus status, TemplateCategory category,
             String search, int page, int size, String sortBy, String sortDir) {
 
-        Sort sort = Sort.by(
-                sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC,
-                sortBy);
+        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+        // "id" as a tie-breaker gives a stable total order, so rows sharing a
+        // sort value (e.g. the same createdAt) never repeat or vanish between pages.
+        Sort sort = Sort.by(direction, sortBy).and(Sort.by(direction, "id"));
 
         return queryRepo.findAllByFilters(
                 projectId, status, category, search, PageRequest.of(page, size, sort));
@@ -69,7 +72,7 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     @Override
     public WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId) {
         return queryRepo.findDetailByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Template", "id", id));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.TEMPLATE_NOT_FOUND, "Template", "id", id));
     }
 
     @Override

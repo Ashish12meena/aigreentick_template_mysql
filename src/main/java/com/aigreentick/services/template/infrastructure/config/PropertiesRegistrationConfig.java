@@ -2,6 +2,7 @@ package com.aigreentick.services.template.infrastructure.config;
 
 import com.aigreentick.services.template.infrastructure.config.properties.CorsProperties;
 import com.aigreentick.services.template.infrastructure.config.properties.FacebookClientProperties;
+import com.aigreentick.services.template.infrastructure.config.properties.IdempotencyProperties;
 import com.aigreentick.services.template.infrastructure.config.properties.InternalApiProperties;
 import com.aigreentick.services.template.infrastructure.config.properties.MediaServiceProperties;
 import com.aigreentick.services.template.infrastructure.config.properties.MediaSyncProperties;
@@ -32,7 +33,8 @@ import org.springframework.context.annotation.Configuration;
         MediaServiceProperties.class,
         MediaSyncProperties.class,
         CorsProperties.class,
-        InternalApiProperties.class
+        InternalApiProperties.class,
+        IdempotencyProperties.class
 })
 public class PropertiesRegistrationConfig {
 }

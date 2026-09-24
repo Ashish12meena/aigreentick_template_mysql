@@ -3,15 +3,6 @@ package com.aigreentick.services.template.common.constant;
 /**
  * Every HTTP path this service exposes, in one place.
  *
- * <p>This class previously existed but was an empty stub, so every route
- * lived as a string literal on {@code TemplateController} — including
- * {@code "api/v1/templates"}, which is missing its leading slash and worked
- * only because Spring tolerates that. Separately,
- * {@code TemplateConstants.Paths} declared a second, contradictory set of
- * path constants that no controller ever read. Two half-maintained copies of
- * the routing table is exactly the kind of thing that drifts, so both now
- * resolve here.
- *
  * <h2>These are constants, not configuration</h2>
  *
  * A URL path is part of the published API contract, not an environment
@@ -20,13 +11,11 @@ package com.aigreentick.services.template.common.constant;
  * {@code internal.api.path-prefix} and is cross-checked against
  * {@link #INTERNAL} at startup.
  *
- * <h2>Frozen paths</h2>
+ * <h2>Consumed by the Messaging Service</h2>
  *
- * {@link #TEMPLATES} + {@link #TEMPLATE_BY_ID} is consumed by the Messaging
- * Service on the message-send path. It is a live contract: the path, the
- * {@code X-Project-Id} header it requires, and the
- * {@code {status, message, data}} response envelope are all fixed. Do not rename, re-shape or re-version it without
- * coordinating a migration with that service first.
+ * {@link #TEMPLATES} + {@link #TEMPLATE_BY_ID} (and its {@code /internal}
+ * twin) is read on the message-send path. Do not rename or re-version it
+ * without coordinating with that service.
  */
 public final class ApiPaths {
 
@@ -39,16 +28,15 @@ public final class ApiPaths {
     /** Versioned internal surface. */
     public static final String INTERNAL_V1 = INTERNAL + "/v1";
 
+    /** Servlet error path; answered by {@code ApiErrorController} in the standard wrapper. */
+    public static final String ERROR = "/error";
+
     // -- Public resources ---------------------------------------------
 
     /** Template collection root. */
     public static final String TEMPLATES = API_V1 + "/templates";
 
-    /**
-     * Single template by internal id, relative to {@link #TEMPLATES}.
-     *
-     * <p>FROZEN - consumed by the Messaging Service. See the class Javadoc.
-     */
+    /** Single template by internal id, relative to {@link #TEMPLATES}. */
     public static final String TEMPLATE_BY_ID = "/{templateId}";
 
     /** Lookup by natural key (name + language) within a WABA. */
@@ -75,5 +63,10 @@ public final class ApiPaths {
     public static final String INTERNAL_TEMPLATES = INTERNAL_V1 + "/templates";
 
     private ApiPaths() {
+    }
+
+    /** {@code Location} value for a created template: a path, so no internal host name leaks through a gateway. */
+    public static String templateLocation(Long templateId) {
+        return TEMPLATES + "/" + templateId;
     }
 }

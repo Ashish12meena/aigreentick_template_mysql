@@ -78,25 +78,31 @@ MUST = required. NEVER = forbidden. Background lives in `architecture.md`; histo
 
 ## 7. API
 
+The company API Standard is binding; these rules are how this service applies it.
+
 1. MUST define every path in `ApiPaths`.
 2. MUST define every header in `ApiHeaders` or `InternalHeaders`.
 3. NEVER hard-code a path or header string in a controller.
 4. MUST put public endpoints under `/api/v1`.
 5. MUST put service-to-service endpoints under `/internal/v1`.
-6. MUST take tenancy from headers (`X-Org-Id`, `X-Project-Id`, `X-Waba-Id`), never from path or query.
-7. MUST scope every data access by `projectId`.
+6. MUST take tenancy from headers (`X-Org-Id`, `X-Project-Id`, `X-Waba-Id`), never from path, query or body.
+7. MUST require `X-Org-Id` and `X-Project-Id` on every business endpoint, and scope every data access by `projectId`.
 8. MUST take the Meta app id from `X-App-Id` (media upload only).
-9. MUST validate at the controller (`@Valid`, `@NotNull`, `@Positive`, `@NotBlank`, `@Min`, `@Max`).
-10. MUST cap page size at `TemplateConstants.Defaults.MAX_SIZE` (100).
-11. NEVER put business logic in a controller: log, call the use case, wrap the result.
-12. MUST return success with `ResponseMessage.success(...)`.
-13. MUST return "saved locally, rejected by Meta" as HTTP 200 with `ResponseMessage.partialFailure(...)`.
-14. MUST signal errors by throwing a `common.exception` type.
-15. NEVER build an error body in a controller; `GlobalExceptionHandler` does it.
-16. MUST give every error a stable `ErrorCode`.
-17. MUST take messages from `TemplateConstants.Messages`.
-18. NEVER change `GET /api/v1/templates/{templateId}` (path, header, envelope, `TemplateDetailResponseDto`) without agreeing it with the Messaging Service team.
-19. MUST keep `/internal/v1/templates/{templateId}` identical to the public one (same use case, same mapper).
+9. MUST use `X-Request-Id` as the only tracking header. NEVER add `X-Correlation-Id`, `X-Trace-Id` or similar.
+10. MUST validate at the controller (`@Valid`, `@NotNull`, `@Positive`, `@NotBlank`, `@Min`, `@Max`, `@OneOf`).
+11. MUST paginate every list with `page` (from 0, default 0), `size` (1–`TemplateConstants.Defaults.MAX_SIZE`, default 20), `sort` (whitelisted with `@OneOf`) and `order` (`asc`/`desc`), and return `PageResponse` (`{items, pagination}`). NEVER return a Spring `Page` or a bare array.
+12. NEVER put business logic in a controller: log, call the use case, wrap the result.
+13. MUST build every success response with `Responses` (`ok`, `created` + `Location`, `accepted`, `noContent`) and pick the status from the standard's operation table.
+14. MUST return "saved locally, rejected by Meta" as a 2xx whose `data` carries `status: FAILED` and `errorMessage`. NEVER return 200 with `success: false`.
+15. MUST signal errors by throwing a `common.exception` type carrying an `ErrorCode`.
+16. NEVER build an error body in a controller; `GlobalExceptionHandler` (or `ApiEnvelope.error` in a filter) does it.
+17. MUST give every new error a stable `ErrorCode` with its HTTP status; resource-specific codes use `<RESOURCE>_<PROBLEM>`.
+18. MUST use 400 `BAD_REQUEST` for unreadable bodies or headers and 422 `VALIDATION_FAILED` with `errors[]` for invalid field values.
+19. MUST mark create/send endpoints `@Idempotent`.
+20. MUST take messages from `TemplateConstants.Messages`. NEVER put SQL, stack traces or secrets in `message`.
+21. NEVER change `GET /api/v1/templates/{templateId}` (path, headers, `TemplateDetailResponseDto`) without agreeing it with the Messaging Service team.
+22. MUST keep `/internal/v1/templates/{templateId}` identical to the public one (same use case, same mapper).
+23. MUST document any response outside the wrapper (e.g. `204`) in the endpoint's `@Operation`.
 
 ## 8. Database
 
@@ -117,7 +123,7 @@ MUST = required. NEVER = forbidden. Background lives in `architecture.md`; histo
 1. MUST call external systems only through a `port/out` adapter in `infrastructure/client`.
 2. MUST use the existing `WebClient` bean for that upstream.
 3. NEVER create an ad-hoc `WebClient.builder()`.
-4. NEVER add `X-Internal-Api-Key`, `X-Internal-Caller` or `X-Request-Id` in an adapter; the client filters add them.
+4. NEVER add `X-Internal-Api-Key`, `X-Internal-Caller`, `X-Request-Id` or `X-User-Id` in an adapter; the client filters add them (tenancy headers are forwarded from the MDC unless the adapter sets them).
 5. NEVER send internal headers to Meta.
 6. MUST fetch the Meta access token from waba-service per operation.
 7. NEVER store a Meta access token.
@@ -145,7 +151,7 @@ MUST = required. NEVER = forbidden. Background lives in `architecture.md`; histo
 
 1. MUST use `@Slf4j` with `{}` placeholders.
 2. NEVER build log messages by string concatenation.
-3. MUST keep MDC keys in `LogKeys`; `CorrelationIdFilter` owns the MDC.
+3. MUST keep MDC keys in `LogKeys`; `RequestIdFilter` owns the MDC, and every executor MUST use `MdcTaskDecorator`.
 4. MUST log every lost result on best-effort paths at WARN or ERROR.
 5. NEVER log a token or secret in clear text.
 6. MUST mask tokens with `SecretMasker.mask(...)` and URLs with `SecretMasker.maskUri(...)`.

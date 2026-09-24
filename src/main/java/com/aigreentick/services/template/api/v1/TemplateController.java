@@ -4,12 +4,15 @@ import com.aigreentick.services.template.api.mapper.CreateTemplateApiMapper;
 import com.aigreentick.services.template.api.mapper.TemplateDetailResponseMapper;
 import com.aigreentick.services.template.api.mapper.TemplateResponseMapper;
 import com.aigreentick.services.template.api.request.CreateTemplateRequestDto;
-import com.aigreentick.services.template.api.response.DeleteResponseDto;
-import com.aigreentick.services.template.api.response.ResponseMessage;
+import com.aigreentick.services.template.api.response.BulkDeleteResponseDto;
+import com.aigreentick.services.template.api.response.SyncAcceptedResponseDto;
 import com.aigreentick.services.template.api.response.TemplateDetailResponseDto;
 import com.aigreentick.services.template.api.response.TemplateResponseDto;
-import com.aigreentick.services.template.api.response.TemplateSyncStats;
+import com.aigreentick.services.template.api.response.common.ApiEnvelope;
+import com.aigreentick.services.template.api.response.common.PageResponse;
+import com.aigreentick.services.template.api.response.common.Responses;
 import com.aigreentick.services.template.api.response.media.ResumableMediaUploadResponseDto;
+import com.aigreentick.services.template.api.validation.OneOf;
 import com.aigreentick.services.template.application.dto.result.TemplateDetailResult;
 import com.aigreentick.services.template.application.dto.result.TemplateResult;
 import com.aigreentick.services.template.application.dto.result.TemplateSummaryResult;
@@ -22,7 +25,10 @@ import com.aigreentick.services.template.application.port.in.UpdateDraftTemplate
 import com.aigreentick.services.template.application.port.in.WhatsappTemplateMediaUseCase;
 import com.aigreentick.services.template.common.constant.ApiHeaders;
 import com.aigreentick.services.template.common.constant.ApiPaths;
+import com.aigreentick.services.template.common.constant.LogKeys;
 import com.aigreentick.services.template.common.constant.TemplateConstants;
+import com.aigreentick.services.template.common.constant.TemplateConstants.SortFields;
+import com.aigreentick.services.template.common.web.Idempotent;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,8 +44,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.data.domain.Page;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -56,18 +62,35 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
+
 /**
- * Public REST surface for WhatsApp template management.
+ * Public REST surface for WhatsApp template management, following the
+ * company API Standard: every JSON response uses the {@link ApiEnvelope}
+ * wrapper, statuses follow the standard's operation table, lists are
+ * {@code {items, pagination}}, and tenancy comes only from headers.
  *
- * <p>Contains no business logic — every method delegates immediately to a
- * {@code port.in} use case (see {@code src/main/resources/docs/rules.md}).
+ * <p>Contains no business logic: each method logs, calls one {@code port.in}
+ * use case and wraps the result via {@link Responses}. Errors are thrown and
+ * rendered by {@code GlobalExceptionHandler}.
  *
- * <h2>Frozen endpoint</h2>
+ * <h2>Documented exceptions to the wrapper</h2>
+ * <ul>
+ *   <li>{@code DELETE /{templateId}} answers {@code 204 No Content} with no body.</li>
+ * </ul>
  *
- * {@code GET /api/v1/templates/{templateId}} is consumed by the Messaging
- * Service on the message-send path. Its path, its {@code X-Project-Id}
- * requirement and its {@code {status, message, data}} envelope are a live
- * contract.
+ * <h2>Meta rejection is a successful call</h2>
+ *
+ * Create and submit persist locally first and then call Meta. If Meta
+ * rejects the template, the local write still happened: the template exists,
+ * has an id and now has status {@code FAILED}. The standard forbids
+ * {@code 200} with {@code success: false}, and an error status would tell
+ * the client nothing was created (prompting a retry that fails as a
+ * duplicate). So these return 2xx with {@code data.errorMessage} /
+ * {@code data.errorPayload} set and a message saying Meta did not accept it.
+ *
+ * <p>{@code GET /{templateId}} is read by the Messaging Service on the send
+ * path; its {@code /internal} twin must stay identical.
  */
 @Slf4j
 @Validated
@@ -76,7 +99,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 @Tag(name = "Templates",
         description = "Create, retrieve, update, submit, sync and delete WhatsApp message templates. "
-                + "Request and response bodies use camelCase field names.")
+                + "All JSON responses use the standard wrapper {success, status, code, message, data, errors, meta}.")
 public class TemplateController {
 
     private final CreateTemplateUseCase createTemplateUseCase;
@@ -95,76 +118,93 @@ public class TemplateController {
     // Create
     // ----------------------------------------------------
 
-    @PostMapping
+    @Idempotent
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Create a template",
             description = "Creates a template on the WABA identified by X-Waba-Id. A draft is stored "
-                    + "locally without submission; otherwise it is submitted to Meta for approval.")
+                    + "locally without submission; otherwise it is submitted to Meta for approval. "
+                    + "If Meta rejects the submission the template is still created (status FAILED) and "
+                    + "data.errorMessage holds Meta's reason.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200",
-                    description = "Created. If Meta rejected the submission the template still exists "
-                            + "locally and status is ERROR with the reason in message."),
-            @ApiResponse(responseCode = "400", description = "Invalid payload or tenancy headers"),
-            @ApiResponse(responseCode = "409", description = "Name and language already exist on this WABA"),
-            @ApiResponse(responseCode = "422", description = "Payload breaks a Meta composition rule"),
-            @ApiResponse(responseCode = "502", description = "WABA credentials unavailable or Meta unreachable")
+            @ApiResponse(responseCode = "201", description = "Created. Location header points at the new template."),
+            @ApiResponse(responseCode = "200", description = "Replay of an earlier request with the same X-Idempotency-Key"),
+            @ApiResponse(responseCode = "400", description = "Missing or invalid header, or unreadable body"),
+            @ApiResponse(responseCode = "409", description = "TEMPLATE_ALREADY_EXISTS, or idempotency key conflict"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: invalid fields or a Meta composition rule (META_* codes)"),
+            @ApiResponse(responseCode = "502", description = "WABA_CREDENTIALS_UNAVAILABLE or DEPENDENCY_FAILURE"),
+            @ApiResponse(responseCode = "504", description = "TIMEOUT: an upstream took too long")
     })
-    public ResponseEntity<ResponseMessage<TemplateResponseDto>> create(
-            @Parameter(description = "Project identifier", example = "101", required = true)
-            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
-
+    public ResponseEntity<ApiEnvelope<TemplateResponseDto>> create(
             @Parameter(description = "Organization identifier", example = "55", required = true)
             @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
+            @Parameter(description = "Project identifier", example = "101", required = true)
+            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
             @Parameter(description = "Meta WABA identifier", example = "109876543210", required = true)
             @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId,
 
             @RequestBody @Valid CreateTemplateRequestDto request) {
 
-        log.info("Create template projectId={} organizationId={} wabaId={} draft={}",
-                projectId, organizationId, wabaId, request.isDraft());
+        log.info("Create template organizationId={} projectId={} wabaId={} draft={}",
+                organizationId, projectId, wabaId, request.isDraft());
 
         TemplateResult result = createTemplateUseCase.execute(
                 createTemplateApiMapper.toCommand(request, projectId, organizationId, wabaId));
+        TemplateResponseDto response = createTemplateApiMapper.toResponseDto(result);
 
-        return metaAwareResponse(createTemplateApiMapper.toResponseDto(result),
-                TemplateConstants.Messages.TEMPLATE_CREATED);
+        String message = request.isDraft()
+                ? TemplateConstants.Messages.DRAFT_SAVED
+                : TemplateConstants.Messages.TEMPLATE_CREATED;
+
+        return Responses.created(
+                URI.create(ApiPaths.templateLocation(response.getId())),
+                metaAwareMessage(response, message, TemplateConstants.Messages.CREATED_META_REJECTED),
+                response);
     }
 
     // ----------------------------------------------------
     // Read
     // ----------------------------------------------------
 
-    /**
-     * FROZEN — consumed by the Messaging Service on the send path. See the
-     * class Javadoc before changing anything about this method's path,
-     * headers or response shape.
-     */
+    /** Read by the Messaging Service on the send path; keep identical to the /internal twin. */
     @GetMapping(ApiPaths.TEMPLATE_BY_ID)
     @Operation(summary = "Get a template by id",
             description = "Full detail for one template, scoped to the calling project.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Found"),
-            @ApiResponse(responseCode = "404", description = "No such template in this project")
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND")
     })
-    public ResponseEntity<ResponseMessage<TemplateDetailResponseDto>> getById(
+    public ResponseEntity<ApiEnvelope<TemplateDetailResponseDto>> getById(
             @Parameter(description = "Template identifier", example = "1024", required = true)
             @PathVariable @NotNull @Positive Long templateId,
+
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
 
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId) {
 
-        log.info("Get template templateId={} projectId={}", templateId, projectId);
+        log.info("Get template templateId={} organizationId={} projectId={}", templateId, organizationId, projectId);
 
         TemplateDetailResult template = getTemplateUseCase.getById(templateId, projectId);
-        return ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
+        return Responses.ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template));
     }
 
     @GetMapping(ApiPaths.TEMPLATE_LIST)
     @Operation(summary = "List templates",
-            description = "Paginated, filterable and sortable listing for the calling project.")
-    @ApiResponse(responseCode = "200", description = "Page of templates")
-    public ResponseEntity<ResponseMessage<Page<TemplateResponseDto>>> list(
+            description = "Page-based list for the calling project. Sortable by createdAt, updatedAt, name, "
+                    + "status, category, language; ties are broken by id so paging is stable. "
+                    + "A page past the end returns 200 with items: [].")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Page of templates (data = {items, pagination})"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: invalid page, size, sort, order or filter")
+    })
+    public ResponseEntity<ApiEnvelope<PageResponse<TemplateResponseDto>>> list(
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
@@ -177,26 +217,30 @@ public class TemplateController {
             @Parameter(description = "Free-text search on template name", example = "welcome_offer")
             @RequestParam(required = false) String search,
 
-            @Parameter(description = "Zero-based page index", example = "0")
-            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Parameter(description = "Page number, starting at 0", example = "0")
+            @RequestParam(defaultValue = TemplateConstants.Defaults.PAGE) @Min(0) int page,
 
-            @Parameter(description = "Page size", example = "10")
-            @RequestParam(defaultValue = "10") @Min(1) @Max(TemplateConstants.Defaults.MAX_SIZE) int size,
+            @Parameter(description = "Items per page, 1 to 100", example = "20")
+            @RequestParam(defaultValue = TemplateConstants.Defaults.SIZE)
+            @Min(1) @Max(TemplateConstants.Defaults.MAX_SIZE) int size,
 
             @Parameter(description = "Field to sort by", example = "createdAt")
-            @RequestParam(defaultValue = TemplateConstants.Defaults.SORT_BY) String sortBy,
+            @RequestParam(defaultValue = TemplateConstants.Defaults.SORT)
+            @OneOf({SortFields.CREATED_AT, SortFields.UPDATED_AT, SortFields.NAME,
+                    SortFields.STATUS, SortFields.CATEGORY, SortFields.LANGUAGE}) String sort,
 
-            @Parameter(description = "Sort direction", example = "desc")
-            @RequestParam(defaultValue = TemplateConstants.Defaults.SORT_DIRECTION) String sortDir) {
+            @Parameter(description = "Sort direction: asc or desc", example = "desc")
+            @RequestParam(defaultValue = TemplateConstants.Defaults.ORDER)
+            @OneOf(value = {"asc", "desc"}, ignoreCase = true) String order) {
 
-        log.info("List templates projectId={} status={} category={} page={} size={}",
-                projectId, status, category, page, size);
+        log.info("List templates organizationId={} projectId={} status={} category={} page={} size={} sort={} order={}",
+                organizationId, projectId, status, category, page, size, sort, order);
 
         Page<TemplateSummaryResult> results = getTemplateUseCase.list(
-                projectId, status, category, search, page, size, sortBy, sortDir);
+                projectId, status, category, search, page, size, sort, order);
 
-        return ok(TemplateConstants.Messages.TEMPLATES_FETCHED,
-                templateResponseMapper.toResponsePage(results));
+        return Responses.ok(TemplateConstants.Messages.TEMPLATES_FETCHED,
+                templateResponseMapper.toPageResponse(results));
     }
 
     @GetMapping(ApiPaths.TEMPLATE_LOOKUP)
@@ -204,9 +248,13 @@ public class TemplateController {
             description = "Resolves a template by its natural key within a WABA.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Found"),
-            @ApiResponse(responseCode = "404", description = "No matching template")
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: name or language missing")
     })
-    public ResponseEntity<ResponseMessage<TemplateDetailResponseDto>> lookup(
+    public ResponseEntity<ApiEnvelope<TemplateDetailResponseDto>> lookup(
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
@@ -219,11 +267,11 @@ public class TemplateController {
             @Parameter(description = "Template language code", example = "en_US", required = true)
             @RequestParam @NotBlank String language) {
 
-        log.info("Lookup template name={} language={} projectId={} wabaId={}",
-                name, language, projectId, wabaId);
+        log.info("Lookup template name={} language={} organizationId={} projectId={} wabaId={}",
+                name, language, organizationId, projectId, wabaId);
 
         TemplateDetailResult template = getTemplateUseCase.getByNameAndLanguage(projectId, name, language, wabaId);
-        return ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
+        return Responses.ok(TemplateConstants.Messages.TEMPLATE_FETCHED,
                 templateDetailResponseMapper.mapToDetailResponse(template));
     }
 
@@ -231,62 +279,70 @@ public class TemplateController {
     // Update
     // ----------------------------------------------------
 
-    @PutMapping(ApiPaths.TEMPLATE_DRAFT)
+    @PutMapping(value = ApiPaths.TEMPLATE_DRAFT, consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Update a draft template",
             description = "Replaces the contents of a template that has not yet been submitted to Meta.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Draft updated"),
-            @ApiResponse(responseCode = "404", description = "No such template in this project"),
-            @ApiResponse(responseCode = "409", description = "Name and language already exist on this WABA"),
-            @ApiResponse(responseCode = "422", description = "Template is no longer a draft, or breaks a Meta rule")
+            @ApiResponse(responseCode = "200", description = "Draft updated; data is the updated template"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND"),
+            @ApiResponse(responseCode = "409", description = "TEMPLATE_INVALID_STATE (no longer a draft) or TEMPLATE_ALREADY_EXISTS"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED")
     })
-    public ResponseEntity<ResponseMessage<TemplateResponseDto>> updateDraft(
+    public ResponseEntity<ApiEnvelope<TemplateResponseDto>> updateDraft(
             @Parameter(description = "Template identifier", example = "1024", required = true)
             @PathVariable @NotNull @Positive Long templateId,
 
-            @Parameter(description = "Project identifier", example = "101", required = true)
-            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
-
             @Parameter(description = "Organization identifier", example = "55", required = true)
             @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
+            @Parameter(description = "Project identifier", example = "101", required = true)
+            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
             @Parameter(description = "Meta WABA identifier", example = "109876543210", required = true)
             @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId,
 
             @RequestBody @Valid CreateTemplateRequestDto request) {
 
-        log.info("Update draft templateId={} projectId={} wabaId={}", templateId, projectId, wabaId);
+        log.info("Update draft templateId={} organizationId={} projectId={} wabaId={}",
+                templateId, organizationId, projectId, wabaId);
 
         TemplateResult result = updateDraftTemplateUseCase.execute(
                 createTemplateApiMapper.toUpdateCommand(request, templateId, projectId, organizationId, wabaId));
 
-        return ok(TemplateConstants.Messages.DRAFT_UPDATED, createTemplateApiMapper.toResponseDto(result));
+        return Responses.ok(TemplateConstants.Messages.DRAFT_UPDATED, createTemplateApiMapper.toResponseDto(result));
     }
 
+    @Idempotent
     @PostMapping(ApiPaths.TEMPLATE_SUBMIT)
     @Operation(summary = "Submit a draft to Meta",
-            description = "Sends a stored draft to Meta for review.")
+            description = "Sends a stored draft to Meta for review. If Meta rejects it, the call still "
+                    + "returns 200: data.status is FAILED and data.errorMessage holds the reason.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200",
-                    description = "Submitted. If Meta rejected it, status is ERROR with the reason in message."),
-            @ApiResponse(responseCode = "404", description = "No such draft in this project"),
-            @ApiResponse(responseCode = "502", description = "WABA credentials unavailable or Meta unreachable")
+            @ApiResponse(responseCode = "200", description = "Submitted (or rejected by Meta, see data.errorMessage)"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND"),
+            @ApiResponse(responseCode = "409", description = "TEMPLATE_INVALID_STATE, or idempotency key conflict"),
+            @ApiResponse(responseCode = "502", description = "WABA_CREDENTIALS_UNAVAILABLE or DEPENDENCY_FAILURE"),
+            @ApiResponse(responseCode = "504", description = "TIMEOUT")
     })
-    public ResponseEntity<ResponseMessage<TemplateResponseDto>> submitDraft(
+    public ResponseEntity<ApiEnvelope<TemplateResponseDto>> submitDraft(
             @Parameter(description = "Template identifier", example = "1024", required = true)
             @PathVariable @NotNull @Positive Long templateId,
+
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
 
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId) {
 
-        log.info("Submit draft templateId={} projectId={}", templateId, projectId);
+        log.info("Submit draft templateId={} organizationId={} projectId={}", templateId, organizationId, projectId);
 
         TemplateResult result = submitDraftToMetaUseCase.execute(templateId, projectId);
+        TemplateResponseDto response = createTemplateApiMapper.toResponseDto(result);
 
-        // Previously reported "Template created successfully" here - copied
-        // from the create endpoint, and wrong: nothing is created by a submit.
-        return metaAwareResponse(createTemplateApiMapper.toResponseDto(result),
-                TemplateConstants.Messages.TEMPLATE_SUBMITTED);
+        return Responses.ok(
+                metaAwareMessage(response, TemplateConstants.Messages.TEMPLATE_SUBMITTED,
+                        TemplateConstants.Messages.SUBMIT_META_REJECTED),
+                response);
     }
 
     // ----------------------------------------------------
@@ -296,14 +352,18 @@ public class TemplateController {
     @DeleteMapping(ApiPaths.TEMPLATE_BY_ID)
     @Operation(summary = "Delete a template",
             description = "Soft-deletes a template locally, and optionally deletes it from Meta. "
-                    + "Note that Meta deletes every language variant sharing the template name.")
+                    + "Note that Meta deletes every language variant sharing the template name. "
+                    + "Returns 204 with no body.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Deleted"),
-            @ApiResponse(responseCode = "404", description = "No such template in this project")
+            @ApiResponse(responseCode = "204", description = "Deleted"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND")
     })
-    public ResponseEntity<ResponseMessage<DeleteResponseDto>> delete(
+    public ResponseEntity<Void> delete(
             @Parameter(description = "Template identifier", example = "1024", required = true)
             @PathVariable @NotNull @Positive Long templateId,
+
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
 
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
@@ -311,41 +371,32 @@ public class TemplateController {
             @Parameter(description = "Also delete the template from Meta", example = "false")
             @RequestParam(defaultValue = "false") boolean deleteFromMeta) {
 
-        log.info("Delete template templateId={} projectId={} deleteFromMeta={}",
-                templateId, projectId, deleteFromMeta);
+        log.info("Delete template templateId={} organizationId={} projectId={} deleteFromMeta={}",
+                templateId, organizationId, projectId, deleteFromMeta);
 
-        int deleted = deleteTemplateUseCase.deleteById(templateId, projectId, deleteFromMeta);
-
-        return ok(TemplateConstants.Messages.TEMPLATE_DELETED, DeleteResponseDto.builder()
-                .deletedCount(deleted)
-                .projectId(projectId)
-                .templateId(templateId)
-                .build());
+        deleteTemplateUseCase.deleteById(templateId, projectId, deleteFromMeta);
+        return Responses.noContent();
     }
 
     /**
-     * Bulk delete for the calling project.
-     *
-     * <p>Deliberately keeps no request body and takes the project from the
-     * header, so there is no way to name a project other than the one the
-     * caller is already scoped to.
+     * Bulk delete for the calling project. Takes no body and reads the
+     * project from the header, so a caller can only ever name its own project.
      */
     @DeleteMapping
     @Operation(summary = "Delete every template in the project",
-            description = "Soft-deletes all templates belonging to the calling project.")
-    @ApiResponse(responseCode = "200", description = "Deleted")
-    public ResponseEntity<ResponseMessage<DeleteResponseDto>> deleteAll(
+            description = "Soft-deletes all templates belonging to the calling project and returns how many.")
+    @ApiResponse(responseCode = "200", description = "Deleted; data.deletedCount is the number removed")
+    public ResponseEntity<ApiEnvelope<BulkDeleteResponseDto>> deleteAll(
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
             @Parameter(description = "Project identifier", example = "101", required = true)
             @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId) {
 
-        log.warn("Bulk delete of all templates requested for projectId={}", projectId);
+        log.warn("Bulk delete of all templates requested organizationId={} projectId={}", organizationId, projectId);
 
         int deleted = deleteTemplateUseCase.deleteAllByProject(projectId);
-
-        return ok("Deleted " + deleted + " template(s)", DeleteResponseDto.builder()
-                .deletedCount(deleted)
-                .projectId(projectId)
-                .build());
+        return Responses.ok(TemplateConstants.Messages.TEMPLATES_DELETED, new BulkDeleteResponseDto(deleted));
     }
 
     // ----------------------------------------------------
@@ -355,25 +406,25 @@ public class TemplateController {
     @PostMapping(ApiPaths.TEMPLATE_SYNC)
     @Operation(summary = "Sync templates from Meta",
             description = "Starts a background reconciliation of this WABA's templates from Meta. "
-                    + "Returns 202 immediately; poll the template list for the outcome.")
+                    + "Returns 202 immediately with {jobId, statusUrl}; the template list shows the outcome.")
     @ApiResponse(responseCode = "202", description = "Sync accepted and running in the background")
-    public ResponseEntity<ResponseMessage<TemplateSyncStats>> sync(
-            @Parameter(description = "Project identifier", example = "101", required = true)
-            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
-
+    public ResponseEntity<ApiEnvelope<SyncAcceptedResponseDto>> sync(
             @Parameter(description = "Organization identifier", example = "55", required = true)
             @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
+            @Parameter(description = "Project identifier", example = "101", required = true)
+            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
             @Parameter(description = "Meta WABA identifier", example = "109876543210", required = true)
             @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId) {
 
-        log.info("Sync requested projectId={} organizationId={} wabaId={}",
-                projectId, organizationId, wabaId);
+        log.info("Sync requested organizationId={} projectId={} wabaId={}", organizationId, projectId, wabaId);
 
-        TemplateSyncStats stats = syncTemplateUseCase.execute(projectId, organizationId, wabaId);
+        syncTemplateUseCase.execute(projectId, organizationId, wabaId);
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ResponseMessage.success(TemplateConstants.Messages.SYNC_ACCEPTED, stats));
+        return Responses.accepted(TemplateConstants.Messages.SYNC_ACCEPTED, new SyncAcceptedResponseDto(
+                MDC.get(LogKeys.REQUEST_ID),
+                ApiPaths.TEMPLATES + ApiPaths.TEMPLATE_LIST));
     }
 
     // ----------------------------------------------------
@@ -386,21 +437,21 @@ public class TemplateController {
                     + "and returns the handle to reference from a template header. "
                     + "X-Waba-Id selects the access token; X-App-Id is the Meta app the session is opened on.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Uploaded"),
-            @ApiResponse(responseCode = "400", description = "Unsupported or invalid media file"),
-            @ApiResponse(responseCode = "413", description = "File exceeds the configured limit"),
+            @ApiResponse(responseCode = "200", description = "Uploaded; data holds the media handle"),
+            @ApiResponse(responseCode = "413", description = "PAYLOAD_TOO_LARGE"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: file missing or unsupported"),
             @ApiResponse(responseCode = "502",
-                    description = "WABA credentials unavailable, Meta unreachable, or Meta rejected the app id")
+                    description = "MEDIA_UPLOAD_FAILED, WABA_CREDENTIALS_UNAVAILABLE or DEPENDENCY_FAILURE")
     })
-    public ResponseEntity<ResponseMessage<ResumableMediaUploadResponseDto>> uploadMedia(
+    public ResponseEntity<ApiEnvelope<ResumableMediaUploadResponseDto>> uploadMedia(
             @Parameter(description = "Media file", required = true)
             @RequestPart("file") MultipartFile file,
 
-            @Parameter(description = "Project identifier", example = "101", required = true)
-            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
-
             @Parameter(description = "Organization identifier", example = "55", required = true)
             @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
+            @Parameter(description = "Project identifier", example = "101", required = true)
+            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
 
             @Parameter(description = "Meta WABA identifier", example = "109876543210", required = true)
             @RequestHeader(ApiHeaders.WABA_ID) @NotBlank String wabaId,
@@ -409,42 +460,25 @@ public class TemplateController {
                     example = "1234567890123456", required = true)
             @RequestHeader(ApiHeaders.APP_ID) @NotBlank String appId) {
 
-        log.info("Upload template media filename={} size={} projectId={} wabaId={} appId={}",
-                file.getOriginalFilename(), file.getSize(), projectId, wabaId, appId);
+        log.info("Upload template media filename={} size={} organizationId={} projectId={} wabaId={} appId={}",
+                file.getOriginalFilename(), file.getSize(), organizationId, projectId, wabaId, appId);
 
         ResumableMediaUploadResponseDto response =
                 templateMediaUseCase.uploadMedia(file, projectId, organizationId, wabaId, appId);
 
-        return ok(TemplateConstants.Messages.MEDIA_UPLOADED, response);
+        return Responses.ok(TemplateConstants.Messages.MEDIA_UPLOADED, response);
     }
 
     // ----------------------------------------------------
-    // Response helpers
+    // Helpers
     // ----------------------------------------------------
 
-    private <T> ResponseEntity<ResponseMessage<T>> ok(String message, T data) {
-        return ResponseEntity.ok(ResponseMessage.success(message, data));
-    }
-
-    /**
-     * Create and submit both persist locally first and then call Meta, so
-     * they have a third outcome beyond success and failure: the template
-     * exists and has an id, but Meta rejected it.
-     *
-     * <p>That is reported as {@code 200} with {@code status: "ERROR"} rather
-     * than as a 4xx/5xx, because answering with an error status would tell
-     * the caller nothing was created — which is false, and leads to a retry
-     * that then fails as a duplicate.
-     */
-    private ResponseEntity<ResponseMessage<TemplateResponseDto>> metaAwareResponse(
-            TemplateResponseDto response, String successMessage) {
-
-        if (response.getErrorMessage() != null) {
-            log.warn("Meta rejected the operation for templateId={}: {}",
-                    response.getId(), response.getErrorMessage());
-            return ResponseEntity.ok(
-                    ResponseMessage.partialFailure(response.getErrorMessage(), response));
+    /** Picks the response message only; the status code never depends on Meta's verdict. */
+    private String metaAwareMessage(TemplateResponseDto response, String successMessage, String rejectedFormat) {
+        if (response.getErrorMessage() == null) {
+            return successMessage;
         }
-        return ResponseEntity.ok(ResponseMessage.success(successMessage, response));
+        log.warn("Meta did not accept templateId={}: {}", response.getId(), response.getErrorMessage());
+        return String.format(rejectedFormat, response.getErrorMessage());
     }
 }

@@ -1,8 +1,7 @@
 package com.aigreentick.services.template.infrastructure.security;
 
-import com.aigreentick.services.template.api.response.error.ErrorResponse;
+import com.aigreentick.services.template.api.response.common.ApiEnvelope;
 import com.aigreentick.services.template.common.constant.InternalHeaders;
-import com.aigreentick.services.template.common.constant.LogKeys;
 import com.aigreentick.services.template.common.error.ErrorCode;
 import com.aigreentick.services.template.infrastructure.config.properties.InternalApiProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,9 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -22,7 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
+import java.util.List;
 
 /**
  * Guards every request under {@code internal.api.path-prefix}.
@@ -110,21 +107,15 @@ public class InternalApiAuthFilter extends OncePerRequestFilter {
     /**
      * Written directly rather than by throwing, because a filter runs outside
      * the dispatcher and {@code @RestControllerAdvice} never sees it. Using
-     * the same {@link ErrorResponse} envelope means a caller parses one shape
+     * the same {@link ApiEnvelope} wrapper means a caller parses one shape
      * whether the failure came from here or from a controller.
      */
     private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        ErrorResponse body = ErrorResponse.builder()
-                .status("ERROR")
-                .code(HttpStatus.UNAUTHORIZED.value())
-                .errorCode(ErrorCode.UNAUTHORIZED)
-                .message("Invalid or missing internal API key")
-                .path(request.getRequestURI())
-                .timestamp(Instant.now())
-                .traceId(MDC.get(LogKeys.TRACE_ID))
-                .build();
+        ErrorCode code = ErrorCode.UNAUTHENTICATED;
+        ApiEnvelope<Void> body = ApiEnvelope.error(code.httpStatus(), code.name(),
+                "Invalid or missing internal API key", List.of(), request.getRequestURI());
 
-        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        response.setStatus(code.httpStatus().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");

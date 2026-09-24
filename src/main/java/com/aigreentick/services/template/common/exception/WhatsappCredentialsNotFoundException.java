@@ -1,14 +1,15 @@
 package com.aigreentick.services.template.common.exception;
 
-import org.springframework.http.HttpStatus;
+import com.aigreentick.services.template.common.error.ErrorCode;
 
 /**
- * Thrown when WABA credentials (access token) cannot be resolved.
- * Maps to HTTP 502 Bad Gateway (upstream dependency failure).
+ * WABA credentials (Meta access token) could not be resolved from
+ * waba-service. An upstream dependency failure, not a client error: HTTP 502
+ * {@code WABA_CREDENTIALS_UNAVAILABLE}.
  */
 public class WhatsappCredentialsNotFoundException extends BaseApplicationException {
 
     public WhatsappCredentialsNotFoundException(String message) {
-        super(message, HttpStatus.BAD_GATEWAY);
+        super(ErrorCode.WABA_CREDENTIALS_UNAVAILABLE, message);
     }
 }

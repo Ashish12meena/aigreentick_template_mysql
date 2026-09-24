@@ -3,17 +3,10 @@ package com.aigreentick.services.template.common.constant;
 /**
  * Human-readable response text and pagination defaults.
  *
- * <h2>What was removed</h2>
- *
- * This class used to also carry a {@code Paths} block (a second, unused
- * routing table that contradicted the controller) and a {@code Fields} block
- * labelled "Mongo DB Field Names" — a leftover from a datastore this service
- * does not use. Routing now lives in {@link ApiPaths}; the Mongo field names
- * are gone entirely.
- *
- * <p>What remains is genuinely shared: message strings that more than one
- * class emits, and the pagination defaults the controller and the query
- * service must agree on.
+ * <p>Pagination follows API Standard §5: {@code page} from 0 (default 0),
+ * {@code size} 1–100 (default 20), {@code sort} from a documented whitelist
+ * (default {@code createdAt}), {@code order} {@code asc|desc} (default
+ * {@code desc}).
  */
 public final class TemplateConstants {
 
@@ -26,11 +19,29 @@ public final class TemplateConstants {
         private Defaults() {
         }
 
-        public static final int PAGE = 0;
-        public static final int SIZE = 10;
+        public static final String PAGE = "0";
+        public static final String SIZE = "20";
         public static final int MAX_SIZE = 100;
-        public static final String SORT_BY = "createdAt";
-        public static final String SORT_DIRECTION = "desc";
+        public static final String SORT = SortFields.CREATED_AT;
+        public static final String ORDER = "desc";
+    }
+
+    /**
+     * Fields the template list may be sorted by. Anything else is rejected
+     * with 422 before it reaches the query (an unknown property used to
+     * fail inside JPA as a 500).
+     */
+    public static final class SortFields {
+
+        private SortFields() {
+        }
+
+        public static final String CREATED_AT = "createdAt";
+        public static final String UPDATED_AT = "updatedAt";
+        public static final String NAME = "name";
+        public static final String STATUS = "status";
+        public static final String CATEGORY = "category";
+        public static final String LANGUAGE = "language";
     }
 
     /** Response messages. Wording is not part of the API contract. */
@@ -39,14 +50,22 @@ public final class TemplateConstants {
         private Messages() {
         }
 
-        public static final String TEMPLATE_FETCHED = "Template fetched";
-        public static final String TEMPLATES_FETCHED = "Templates fetched";
+        public static final String TEMPLATE_FETCHED = "Template fetched successfully";
+        public static final String TEMPLATES_FETCHED = "Templates fetched successfully";
         public static final String TEMPLATE_CREATED = "Template created successfully";
+        public static final String DRAFT_SAVED = "Draft template saved successfully";
         public static final String TEMPLATE_SUBMITTED = "Template submitted to Meta";
-        public static final String DRAFT_UPDATED = "Draft updated";
-        public static final String TEMPLATE_DELETED = "Template deleted";
-        public static final String MEDIA_UPLOADED = "Media uploaded";
-        public static final String SYNC_ACCEPTED =
-                "Template sync started in background. Poll the template list for completion.";
+        public static final String DRAFT_UPDATED = "Draft updated successfully";
+        public static final String TEMPLATES_DELETED = "Templates deleted successfully";
+        public static final String MEDIA_UPLOADED = "Media uploaded successfully";
+        public static final String SYNC_ACCEPTED = "Template sync started in the background";
+
+        /**
+         * The template was saved (it has an id) but Meta did not accept it.
+         * The request still succeeded from the client's point of view: see
+         * {@code data.status} and {@code data.errorMessage}.
+         */
+        public static final String CREATED_META_REJECTED = "Template saved, but Meta did not accept it: %s";
+        public static final String SUBMIT_META_REJECTED = "Template was not accepted by Meta: %s";
     }
 }

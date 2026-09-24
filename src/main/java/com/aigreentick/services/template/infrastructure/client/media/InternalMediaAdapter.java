@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.UUID;
 import java.util.List;
 
 /**
@@ -30,9 +31,12 @@ import java.util.List;
  * <li>POST /api/v1/media/upload/batch</li>
  * <li>Multipart parts must be named {@code files}</li>
  * <li>Each file is sent as {@code application/octet-stream}</li>
- * <li>Tenancy headers: X-Org-Id, X-Project-Id and X-Waba-Id</li>
- * <li>Response is wrapped in {@code {status, message, data}} and returns
- * HTTP 207 on every outcome, including all-success</li>
+ * <li>Tenancy headers: X-Org-Id, X-Project-Id and X-Waba-Id; a fresh
+ * X-Idempotency-Key per call. X-Internal-Api-Key, X-Internal-Caller and
+ * X-Request-Id are added by the client filters.</li>
+ * <li>Response is the API Standard wrapper
+ * {@code {success, status, code, message, data, errors, meta}} with HTTP 200
+ * for a processed batch; per-file outcomes are in {@code data.results}.</li>
  * </ul>
  *
  * <p>
@@ -61,7 +65,6 @@ import java.util.List;
 @Component
 public class InternalMediaAdapter implements InternalMediaPort {
 
-    private static final String SUCCESS_STATUS = "SUCCESS";
     private static final String FILE_PART_NAME = "files";
 
     /**
@@ -180,6 +183,13 @@ public class InternalMediaAdapter implements InternalMediaPort {
                     .header(
                             ApiHeaders.WABA_ID,
                             wabaId)
+                    // storage-service requires X-Idempotency-Key on uploads (API
+                    // Standard: required on create APIs) and derives per-file
+                    // keys K:0, K:1, ... from it. One key per call: this adapter
+                    // does not retry, so every call is a new logical batch.
+                    .header(
+                            ApiHeaders.IDEMPOTENCY_KEY,
+                            UUID.randomUUID().toString())
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(
                             BodyInserters.fromMultipartData(
@@ -270,7 +280,7 @@ public class InternalMediaAdapter implements InternalMediaPort {
             return null;
         }
 
-        if (!SUCCESS_STATUS.equals(envelope.getStatus())) {
+        if (!envelope.succeeded()) {
 
             log.error(
                     "storage-service rejected the batch. "
@@ -290,7 +300,7 @@ public class InternalMediaAdapter implements InternalMediaPort {
             log.error(
                     "storage-service returned {} with no data. "
                             + "orgId={} projectId={}",
-                    SUCCESS_STATUS,
+                    envelope.getStatus(),
                     orgId,
                     projectId);
 
@@ -302,7 +312,7 @@ public class InternalMediaAdapter implements InternalMediaPort {
             log.error(
                     "storage-service returned {} with a null results list; "
                             + "cannot join {} file(s) to tasks. orgId={} projectId={}",
-                    SUCCESS_STATUS,
+                    envelope.getStatus(),
                     fileCount,
                     orgId,
                     projectId);

@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.http.codec.json.Jackson2JsonDecoder;
@@ -75,7 +76,7 @@ public class WebClientConfig {
                 .clientConnector(connector(properties.getConnectTimeout(), properties.getReadTimeout()))
                 .codecs(c -> applyCamelCaseCodecs(c, 1024 * 1024))
                 .filter(internalAuth(internalApi))
-                .filter(correlation())
+                .filter(contextPropagation())
                 .filter(logFailures(WABA_WEB_CLIENT))
                 .build();
     }
@@ -87,14 +88,14 @@ public class WebClientConfig {
                 .clientConnector(connector(properties.getConnectTimeout(), properties.getReadTimeout()))
                 .codecs(c -> applyCamelCaseCodecs(c, properties.getMaxInMemorySizeBytes()))
                 .filter(internalAuth(internalApi))
-                .filter(correlation())
+                .filter(contextPropagation())
                 .filter(logFailures(MEDIA_WEB_CLIENT))
                 .build();
     }
 
     /**
      * Meta is an external third party, so it gets neither the internal API
-     * key nor the internal correlation header — leaking either outside the
+     * key nor the internal request-context headers — leaking either outside the
      * trust boundary is exactly what those headers must not do.
      */
     @Bean(FACEBOOK_WEB_CLIENT)
@@ -156,27 +157,32 @@ public class WebClientConfig {
     }
 
     /**
-     * Propagates the inbound trace id so one logical operation carries the
-     * same id across template-service, waba-service and storage-service.
-     * Without it each service mints its own and a distributed trace cannot be
-     * reassembled.
+     * Passes the request context on to sibling services unchanged
+     * (API Standard §1): {@code X-Request-Id}, {@code X-Org-Id},
+     * {@code X-Project-Id} and {@code X-User-Id}.
      *
-     * <p>Reads the MDC rather than a method parameter because the id is
-     * request-scoped context, not an argument any call site should have to
-     * thread through. Sync work runs on the media-sync pool where the MDC is
-     * not inherited, so the header is simply omitted there rather than sent
-     * blank.
+     * <p>Values come from the MDC populated by {@code RequestIdFilter}
+     * (and copied onto the sync pool by {@code MdcTaskDecorator}), so no
+     * adapter has to thread them through. A header the adapter already set
+     * explicitly — e.g. tenancy taken from the template being processed — is
+     * left untouched; an absent value is omitted rather than sent blank.
      */
-    private ExchangeFilterFunction correlation() {
-        return (request, next) -> {
-            String traceId = MDC.get(LogKeys.TRACE_ID);
-            if (traceId == null || traceId.isBlank()) {
-                return next.exchange(request);
-            }
-            return next.exchange(ClientRequest.from(request)
-                    .header(ApiHeaders.REQUEST_ID, traceId)
-                    .build());
-        };
+    private ExchangeFilterFunction contextPropagation() {
+        return (request, next) -> next.exchange(ClientRequest.from(request)
+                .headers(headers -> {
+                    forward(headers, ApiHeaders.REQUEST_ID, LogKeys.REQUEST_ID);
+                    forward(headers, ApiHeaders.ORG_ID, LogKeys.ORG_ID);
+                    forward(headers, ApiHeaders.PROJECT_ID, LogKeys.PROJECT_ID);
+                    forward(headers, ApiHeaders.USER_ID, LogKeys.USER_ID);
+                })
+                .build());
+    }
+
+    private static void forward(HttpHeaders headers, String header, String mdcKey) {
+        String value = MDC.get(mdcKey);
+        if (value != null && !value.isBlank() && !headers.containsKey(header)) {
+            headers.set(header, value);
+        }
     }
 
     /**

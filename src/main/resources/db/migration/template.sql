@@ -309,3 +309,29 @@ CREATE TABLE whatsapp_template_media_uploads (
   INDEX idx_project (project_id)
 
 ) ENGINE=InnoDB;
+
+-- API INFRASTRUCTURE
+-- 10. api_idempotency_keys
+-- X-Idempotency-Key handling for create/send endpoints (API Standard §1).
+-- Entity: infrastructure.idempotency.IdempotencyRecord. Rows expire after
+-- idempotency.ttl (default 24h) and are purged hourly.
+CREATE TABLE api_idempotency_keys (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+  organization_id BIGINT UNSIGNED NOT NULL,
+  project_id BIGINT UNSIGNED NOT NULL,
+  idempotency_key VARCHAR(128) NOT NULL,
+
+  request_fingerprint VARCHAR(64) NOT NULL,
+  state VARCHAR(16) NOT NULL,
+
+  response_status INT NULL,
+  response_body LONGTEXT NULL,
+
+  created_at DATETIME(6) NOT NULL,
+  completed_at DATETIME(6) NULL,
+
+  UNIQUE KEY uk_idempotency_scope_key (organization_id, project_id, idempotency_key),
+  INDEX idx_idempotency_created_at (created_at)
+
+) ENGINE=InnoDB;

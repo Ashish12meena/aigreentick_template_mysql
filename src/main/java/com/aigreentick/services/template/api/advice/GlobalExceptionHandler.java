@@ -1,396 +1,482 @@
 package com.aigreentick.services.template.api.advice;
 
-import com.aigreentick.services.template.api.response.error.ErrorResponse;
-import com.aigreentick.services.template.application.validation.Violation;
-import com.aigreentick.services.template.common.constant.LogKeys;
+import com.aigreentick.services.template.api.response.common.ApiEnvelope;
+import com.aigreentick.services.template.api.response.common.ApiFieldError;
 import com.aigreentick.services.template.common.error.ErrorCode;
+import com.aigreentick.services.template.common.error.FieldErrorCode;
 import com.aigreentick.services.template.common.exception.BaseApplicationException;
-import com.aigreentick.services.template.common.exception.DuplicateResourceException;
-import com.aigreentick.services.template.common.exception.ExternalServiceException;
-import com.aigreentick.services.template.common.exception.InvalidTemplateStateException;
-import com.aigreentick.services.template.common.exception.MediaUploadException;
-import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
 import com.aigreentick.services.template.common.exception.TemplateRuleViolationException;
 import com.aigreentick.services.template.common.exception.WhatsappCredentialsNotFoundException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
+import org.springframework.context.MessageSourceResolvable;
+import org.springframework.core.MethodParameter;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.Errors;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * Translates every exception into the one {@link ErrorResponse} envelope.
+ * Translates every exception into the standard error wrapper (API Standard §6).
  *
- * <h2>Why this moved out of {@code common.exception}</h2>
- *
- * It builds HTTP responses and depends on the servlet API — it is a web-layer
- * component. Sitting in {@code common} forced a {@code common -> api}
- * dependency and misrepresented {@code common} as a package the API layer
- * depends on in both directions. The exception <em>types</em> stay in
- * {@code common.exception}, where any layer may throw them; only the HTTP
- * translation lives here.
- *
- * <h2>What changed beyond the move</h2>
- *
+ * <h2>How statuses are chosen</h2>
  * <ul>
- *   <li>Every response now carries an {@link ErrorCode}. Previously a caller
- *       had to match prose to tell "this template does not exist" from "no
- *       handler is mapped here" — both plain {@code 404}s.</li>
- *   <li>Every response carries the {@code traceId} set by
- *       {@code CorrelationIdFilter}, so a caller reporting a failure can quote
- *       one id instead of describing when it happened.</li>
- *   <li>{@link TemplateRuleViolationException} is handled. It was thrown by
- *       the validation layer but had no handler, so a payload that broke a
- *       Meta composition rule fell through to the catch-all and returned
- *       {@code 500} — telling the caller this service is broken when in fact
- *       their template was invalid, and discarding the per-rule detail the
- *       validators had already computed.</li>
- *   <li>Handlers are ordered most-specific-first, and the
- *       {@link BaseApplicationException} handler is split into explicit
- *       subclass handlers so each can carry its own code.</li>
+ *   <li><b>400 {@code BAD_REQUEST}</b> — the body or a header can't be read:
+ *       malformed JSON, a missing or invalid tenancy header.</li>
+ *   <li><b>422 {@code VALIDATION_FAILED}</b> — the request was read but field
+ *       values are invalid: bean validation on the body, query parameters and
+ *       path variables, and Meta composition rules. Details go in
+ *       {@code errors[]} with standard field codes.</li>
+ *   <li><b>Application errors</b> — every {@link BaseApplicationException}
+ *       carries an {@link ErrorCode}, and the code carries its HTTP status,
+ *       so one handler renders all of them.</li>
+ *   <li><b>Upstream timeouts</b> — reported as 504 {@code TIMEOUT} instead
+ *       of 502, so the client knows a retry is reasonable.</li>
  * </ul>
+ *
+ * <p>{@code message} never contains stack traces, SQL or secrets: unexpected
+ * exceptions are logged in full and answered with a generic text.
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final String VALIDATION_MESSAGE = "Request has invalid fields";
+
     // ----------------------------------------------------
-    // 400 - malformed or invalid requests
+    // 422 - field validation
     // ----------------------------------------------------
 
+    /** {@code @Valid @RequestBody} failures when method validation does not apply. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(
+    public ResponseEntity<ApiEnvelope<Void>> handleBodyValidation(
             MethodArgumentNotValidException ex, HttpServletRequest request) {
 
-        List<ErrorResponse.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
-                .map(fe -> ErrorResponse.FieldError.builder()
-                        .field(fe.getField())
-                        .message(fe.getDefaultMessage())
-                        .rejectedValue(fe.getRejectedValue())
-                        .build())
-                .toList();
-
-        log.warn("Validation failed on {} - {} field error(s)", request.getRequestURI(), fieldErrors.size());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, "Validation failed", request, fieldErrors);
+        List<ApiFieldError> errors = toFieldErrors(ex.getBindingResult());
+        log.warn("Body validation failed on {} - {} field error(s)", request.getRequestURI(), errors.size());
+        return validationFailed(errors, request);
     }
 
     /**
-     * Constraint failures on controller method parameters — headers, path
-     * variables, request params (Spring Framework 6.1+).
+     * Constraint failures found by Spring's built-in method validation: on
+     * headers, path variables, query parameters and (when parameter
+     * constraints are present) the {@code @Valid} body too.
      *
-     * <p>Must exist: without it the catch-all below swallows this and returns
-     * {@code 500} for what is plainly a client error.
+     * <p>A bad <em>header</em> means the request can't be used at all, so any
+     * header failure makes the whole response 400 {@code BAD_REQUEST}.
+     * Otherwise it is 422 with one {@code errors[]} entry per problem.
      */
     @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<ErrorResponse> handleMethodValidation(
+    public ResponseEntity<ApiEnvelope<Void>> handleMethodValidation(
             HandlerMethodValidationException ex, HttpServletRequest request) {
 
-        List<ErrorResponse.FieldError> fieldErrors = ex.getAllValidationResults().stream()
-                .flatMap(result -> {
-                    String name = result.getMethodParameter().getParameterName();
-                    return result.getResolvableErrors().stream()
-                            .map(err -> ErrorResponse.FieldError.builder()
-                                    .field(name != null ? name : "parameter")
-                                    .message(err.getDefaultMessage())
-                                    .build());
-                })
-                .toList();
+        List<String> headerProblems = new ArrayList<>();
+        List<ApiFieldError> errors = new ArrayList<>();
 
-        log.warn("Parameter validation failed on {} - {} error(s)", request.getRequestURI(), fieldErrors.size());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, "Validation failed", request, fieldErrors);
+        for (ParameterValidationResult result : ex.getParameterValidationResults()) {
+            if (result instanceof ParameterErrors bodyErrors) {
+                errors.addAll(toFieldErrors(bodyErrors));
+                continue;
+            }
+            MethodParameter parameter = result.getMethodParameter();
+            RequestHeader header = parameter.getParameterAnnotation(RequestHeader.class);
+            for (MessageSourceResolvable error : result.getResolvableErrors()) {
+                if (header != null) {
+                    headerProblems.add(String.format("'%s' %s", headerName(header, parameter), error.getDefaultMessage()));
+                } else {
+                    errors.add(new ApiFieldError(requestName(parameter),
+                            FieldErrorCode.fromCodes(error.getCodes()).name(), error.getDefaultMessage()));
+                }
+            }
+        }
+
+        if (!headerProblems.isEmpty()) {
+            String message = "Invalid header " + String.join("; ", headerProblems);
+            log.warn("{} on {}", message, request.getRequestURI());
+            return error(ErrorCode.BAD_REQUEST, message, request);
+        }
+
+        log.warn("Parameter validation failed on {} - {} error(s)", request.getRequestURI(), errors.size());
+        return validationFailed(errors, request);
     }
 
+    /** Validation raised by {@code @Validated} beans outside the MVC argument pipeline. */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+    public ResponseEntity<ApiEnvelope<Void>> handleConstraintViolation(
             ConstraintViolationException ex, HttpServletRequest request) {
 
-        List<ErrorResponse.FieldError> fieldErrors = ex.getConstraintViolations().stream()
-                .map(v -> ErrorResponse.FieldError.builder()
-                        .field(v.getPropertyPath() != null ? v.getPropertyPath().toString() : "unknown")
-                        .message(v.getMessage())
-                        .build())
+        List<ApiFieldError> errors = ex.getConstraintViolations().stream()
+                .map(v -> new ApiFieldError(leafName(v), constraintCode(v), v.getMessage()))
                 .toList();
 
-        log.warn("Constraint violation on {} - {} error(s)", request.getRequestURI(), fieldErrors.size());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, "Validation failed", request, fieldErrors);
+        log.warn("Constraint violation on {} - {} error(s)", request.getRequestURI(), errors.size());
+        return validationFailed(errors, request);
     }
 
     /**
-     * A rejected enum value (e.g. {@code format: "PNG"}) arrives here wrapped
-     * in an {@link InvalidFormatException}. Without unwrapping it the client
-     * gets "Malformed request body" and no indication of which field was
-     * wrong, so the unwrapping is worth the extra branch.
+     * Meta composition rules. Each violation keeps its dotted field path and
+     * its stable {@code META_*} code, so the client can highlight the exact
+     * component.
      */
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleUnreadableBody(
-            HttpMessageNotReadableException ex, HttpServletRequest request) {
+    @ExceptionHandler(TemplateRuleViolationException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleRuleViolation(
+            TemplateRuleViolationException ex, HttpServletRequest request) {
 
-        log.warn("Malformed request body on {}: {}", request.getRequestURI(), ex.getMessage());
+        List<ApiFieldError> errors = ex.getViolations().stream()
+                .map(v -> new ApiFieldError(v.field(), v.code(), v.message()))
+                .toList();
 
-        if (ex.getCause() instanceof InvalidFormatException ife) {
-            String field = ife.getPath().stream()
-                    .map(ref -> ref.getFieldName() != null ? ref.getFieldName() : "[" + ref.getIndex() + "]")
-                    .collect(Collectors.joining("."));
-
-            String message = ife.getTargetType() != null && ife.getTargetType().isEnum()
-                    ? String.format("Invalid value for '%s'. Allowed values: %s",
-                            field, Arrays.toString(ife.getTargetType().getEnumConstants()))
-                    : String.format("Invalid value for '%s'", field);
-
-            return build(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REQUEST, message, request, null);
-        }
-
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.MALFORMED_REQUEST_BODY, "Malformed request body", request, null);
+        log.warn("Template rule violation on {} - {} rule(s)", request.getRequestURI(), errors.size());
+        return error(ErrorCode.VALIDATION_FAILED, ex.getMessage(), errors, request);
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ErrorResponse> handleMissingParam(
+    public ResponseEntity<ApiEnvelope<Void>> handleMissingParam(
             MissingServletRequestParameterException ex, HttpServletRequest request) {
 
-        String message = String.format("Missing required parameter: '%s'", ex.getParameterName());
-        log.warn("{} on {}", message, request.getRequestURI());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.MISSING_PARAMETER, message, request, null);
+        log.warn("Missing parameter '{}' on {}", ex.getParameterName(), request.getRequestURI());
+        return validationFailed(List.of(new ApiFieldError(ex.getParameterName(),
+                FieldErrorCode.REQUIRED.name(), ex.getParameterName() + " is required")), request);
     }
 
-    @ExceptionHandler(MissingRequestHeaderException.class)
-    public ResponseEntity<ErrorResponse> handleMissingHeader(
-            MissingRequestHeaderException ex, HttpServletRequest request) {
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleMissingPart(
+            MissingServletRequestPartException ex, HttpServletRequest request) {
 
-        String message = String.format("Missing required header: '%s'", ex.getHeaderName());
-        log.warn("{} on {}", message, request.getRequestURI());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.MISSING_PARAMETER, message, request, null);
-    }
-
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleTypeMismatch(
-            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
-
-        String message = String.format("Invalid value '%s' for parameter '%s'. Expected type: %s",
-                ex.getValue(), ex.getName(),
-                ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "unknown");
-        log.warn("{} on {}", message, request.getRequestURI());
-        return build(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REQUEST, message, request, null);
-    }
-
-    // ----------------------------------------------------
-    // 404 / 405 - routing
-    // ----------------------------------------------------
-
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(
-            ResourceNotFoundException ex, HttpServletRequest request) {
-
-        log.info("Resource not found on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.NOT_FOUND, ErrorCode.RESOURCE_NOT_FOUND, ex.getMessage(), request, null);
+        log.warn("Missing multipart part '{}' on {}", ex.getRequestPartName(), request.getRequestURI());
+        return validationFailed(List.of(new ApiFieldError(ex.getRequestPartName(),
+                FieldErrorCode.REQUIRED.name(), ex.getRequestPartName() + " is required")), request);
     }
 
     /**
-     * Distinct from {@link #handleNotFound}: this one means the deployment is
-     * wrong, not that the caller asked for a template that is gone. Both are
-     * {@code 404}, which is why {@link ErrorCode} carries the difference.
+     * A value that can't be converted to the parameter type, e.g.
+     * {@code ?status=FOO} or {@code X-Project-Id: abc}. Headers are 400 (the
+     * request can't be used); query and path values are 422 field errors.
      */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+
+        MethodParameter parameter = ex.getParameter();
+        RequestHeader header = parameter.getParameterAnnotation(RequestHeader.class);
+        Class<?> type = ex.getRequiredType();
+
+        if (header != null) {
+            String message = String.format("Invalid header '%s': expected %s",
+                    headerName(header, parameter), type != null ? type.getSimpleName() : "a different type");
+            log.warn("{} on {}", message, request.getRequestURI());
+            return error(ErrorCode.BAD_REQUEST, message, request);
+        }
+
+        String name = requestName(parameter);
+        String message = type != null && type.isEnum()
+                ? String.format("%s must be one of %s", name, Arrays.toString(type.getEnumConstants()))
+                : String.format("%s has an invalid value", name);
+        log.warn("{} on {}", message, request.getRequestURI());
+        return validationFailed(List.of(new ApiFieldError(name, FieldErrorCode.INVALID_VALUE.name(), message)), request);
+    }
+
+    // ----------------------------------------------------
+    // 400 - unreadable request
+    // ----------------------------------------------------
+
+    /**
+     * Unparseable JSON is 400. A well-formed body holding a value of the
+     * wrong type for a field (e.g. an unknown enum constant) is a field
+     * error: 422 naming that field.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleUnreadableBody(
+            HttpMessageNotReadableException ex, HttpServletRequest request) {
+
+        log.warn("Unreadable request body on {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+
+        if (ex.getCause() instanceof MismatchedInputException mie && !mie.getPath().isEmpty()) {
+            String field = jsonPath(mie.getPath());
+            Class<?> target = mie.getTargetType();
+            String message = mie instanceof InvalidFormatException && target != null && target.isEnum()
+                    ? String.format("%s must be one of %s", field, Arrays.toString(target.getEnumConstants()))
+                    : String.format("%s has an invalid value", field);
+            return validationFailed(List.of(new ApiFieldError(field, FieldErrorCode.INVALID_VALUE.name(), message)), request);
+        }
+
+        return error(ErrorCode.BAD_REQUEST, "Request body is missing or is not valid JSON", request);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleMissingHeader(
+            MissingRequestHeaderException ex, HttpServletRequest request) {
+
+        String message = String.format("Missing required header '%s'", ex.getHeaderName());
+        log.warn("{} on {}", message, request.getRequestURI());
+        return error(ErrorCode.BAD_REQUEST, message, request);
+    }
+
+    // ----------------------------------------------------
+    // Protocol-level: 404 / 405 / 413 / 415
+    // ----------------------------------------------------
+
+    /** No handler mapped to this path: the deployment or the URL is wrong, not the data. */
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNoResource(
+    public ResponseEntity<ApiEnvelope<Void>> handleNoResource(
             NoResourceFoundException ex, HttpServletRequest request) {
 
         log.info("No handler for {} {}", request.getMethod(), request.getRequestURI());
-        return build(HttpStatus.NOT_FOUND, ErrorCode.ENDPOINT_NOT_FOUND,
-                "No endpoint exists for this path", request, null);
+        return error(ErrorCode.NOT_FOUND, "No endpoint exists for this path", request);
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+    public ResponseEntity<ApiEnvelope<Void>> handleMethodNotSupported(
             HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
 
         String message = String.format("HTTP method '%s' is not supported for this endpoint", ex.getMethod());
         log.info("{} on {}", message, request.getRequestURI());
-        return build(HttpStatus.METHOD_NOT_ALLOWED, ErrorCode.METHOD_NOT_ALLOWED, message, request, null);
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getSupportedHttpMethods() != null) {
+            headers.setAllow(ex.getSupportedHttpMethods());
+        }
+        return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.httpStatus()).headers(headers)
+                .body(envelope(ErrorCode.METHOD_NOT_ALLOWED, message, List.of(), request));
     }
-
-    // ----------------------------------------------------
-    // 409 / 422 - state, uniqueness and composition rules
-    // ----------------------------------------------------
-
-    @ExceptionHandler(DuplicateResourceException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicate(
-            DuplicateResourceException ex, HttpServletRequest request) {
-
-        log.warn("Duplicate resource on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.CONFLICT, ErrorCode.DUPLICATE_RESOURCE, ex.getMessage(), request, null);
-    }
-
-    /**
-     * Safety net for a unique-constraint violation that slipped past the
-     * application-level duplicate check — for instance two concurrent creates
-     * of the same name. The DB detail is deliberately not echoed back:
-     * constraint names disclose schema structure.
-     */
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ErrorResponse> handleDataIntegrity(
-            DataIntegrityViolationException ex, HttpServletRequest request) {
-
-        log.error("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.CONFLICT, ErrorCode.DUPLICATE_RESOURCE,
-                "A resource with the same identifier already exists", request, null);
-    }
-
-    @ExceptionHandler(InvalidTemplateStateException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidState(
-            InvalidTemplateStateException ex, HttpServletRequest request) {
-
-        log.warn("Invalid template state on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.INVALID_TEMPLATE_STATE,
-                ex.getMessage(), request, null);
-    }
-
-    /**
-     * The payload is well-formed and every field is individually valid, but
-     * the combination breaks a Meta composition rule — hence {@code 422}.
-     *
-     * <p>The validators have already produced a precise, per-rule
-     * {@link Violation} list. Flattening it into {@code fieldErrors} means the
-     * caller can highlight the offending components instead of being handed
-     * one summary sentence.
-     */
-    @ExceptionHandler(TemplateRuleViolationException.class)
-    public ResponseEntity<ErrorResponse> handleRuleViolation(
-            TemplateRuleViolationException ex, HttpServletRequest request) {
-
-        List<ErrorResponse.FieldError> fieldErrors = ex.getViolations().stream()
-                .map(v -> ErrorResponse.FieldError.builder()
-                        .field(v.field())
-                        .code(v.code())
-                        .message(v.message())
-                        .build())
-                .toList();
-
-        log.warn("Template rule violation on {} - {} rule(s)", request.getRequestURI(), fieldErrors.size());
-        return build(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.TEMPLATE_RULE_VIOLATION,
-                ex.getMessage(), request, fieldErrors);
-    }
-
-    // ----------------------------------------------------
-    // 413 - payload limits
-    // ----------------------------------------------------
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<ErrorResponse> handleMaxUploadSize(
+    public ResponseEntity<ApiEnvelope<Void>> handleMaxUploadSize(
             MaxUploadSizeExceededException ex, HttpServletRequest request) {
 
         log.warn("Upload too large on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.PAYLOAD_TOO_LARGE, ErrorCode.PAYLOAD_TOO_LARGE,
-                "File size exceeds the maximum allowed limit", request, null);
+        return error(ErrorCode.PAYLOAD_TOO_LARGE, "File size exceeds the maximum allowed limit", request);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleUnsupportedMediaType(
+            HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+
+        String message = String.format("Content-Type '%s' is not supported; use %s",
+                ex.getContentType(), ex.getSupportedMediaTypes());
+        log.warn("{} on {}", message, request.getRequestURI());
+        return error(ErrorCode.UNSUPPORTED_MEDIA_TYPE, message, request);
     }
 
     // ----------------------------------------------------
-    // 5xx - upstream and internal
+    // 409 - conflicts not raised as application exceptions
     // ----------------------------------------------------
 
     /**
-     * A credential lookup failure surfaces as {@code 502}: it means "the
-     * upstream we depend on could not authorise us", not "your request was
-     * bad". Attributing it correctly is what stops an on-call engineer
-     * debugging this service when waba-service is the one that is down.
+     * Safety net for a unique-constraint violation that slipped past the
+     * application-level duplicate check (e.g. two concurrent creates). The DB
+     * detail is not echoed: constraint names disclose schema structure.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleDataIntegrity(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
+
+        log.error("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        return error(ErrorCode.CONFLICT, "A resource with the same identifier already exists", request);
+    }
+
+    // ----------------------------------------------------
+    // Application exceptions (4xx and 5xx)
+    // ----------------------------------------------------
+
+    /**
+     * The upstream message can echo waba-service's response body, so the
+     * caller gets a fixed text; the detail is in the log.
      */
     @ExceptionHandler(WhatsappCredentialsNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleCredentialsUnavailable(
+    public ResponseEntity<ApiEnvelope<Void>> handleCredentialsUnavailable(
             WhatsappCredentialsNotFoundException ex, HttpServletRequest request) {
 
-        log.error("WABA credential unavailable on {}: {}", request.getRequestURI(), ex.getMessage());
-        return build(HttpStatus.BAD_GATEWAY, ErrorCode.UPSTREAM_CREDENTIAL_UNAVAILABLE,
-                "Could not resolve WhatsApp Business Account credentials", request, null);
+        log.error("WABA credentials unavailable on {}: {}", request.getRequestURI(), ex.getMessage());
+        return error(timeoutOr(ex.getErrorCode(), ex),
+                "Could not resolve WhatsApp Business Account credentials", request);
     }
 
-    @ExceptionHandler(MediaUploadException.class)
-    public ResponseEntity<ErrorResponse> handleMediaUpload(
-            MediaUploadException ex, HttpServletRequest request) {
-
-        log.error("Media upload failed on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        return build(HttpStatus.BAD_GATEWAY, ErrorCode.UPSTREAM_MEDIA_UPLOAD_FAILED, ex.getMessage(), request, null);
-    }
-
-    @ExceptionHandler(ExternalServiceException.class)
-    public ResponseEntity<ErrorResponse> handleExternalService(
-            ExternalServiceException ex, HttpServletRequest request) {
-
-        log.error("Upstream call failed on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        return build(HttpStatus.BAD_GATEWAY, ErrorCode.UPSTREAM_META_API_FAILED, ex.getMessage(), request, null);
-    }
-
-    /**
-     * Any {@link BaseApplicationException} subclass added later, before
-     * someone gets round to giving it a dedicated handler. It still carries
-     * its own status, so the response is correct — only the
-     * {@link ErrorCode} is coarse.
-     */
+    /** Every other deliberate error: the exception's {@link ErrorCode} decides the status. */
     @ExceptionHandler(BaseApplicationException.class)
-    public ResponseEntity<ErrorResponse> handleApplicationException(
+    public ResponseEntity<ApiEnvelope<Void>> handleApplicationException(
             BaseApplicationException ex, HttpServletRequest request) {
 
-        HttpStatus status = ex.getHttpStatus();
-        if (status.is5xxServerError()) {
-            log.error("Application error [{}] on {}: {}", status.value(), request.getRequestURI(), ex.getMessage(), ex);
+        ErrorCode code = timeoutOr(ex.getErrorCode(), ex);
+        if (code.httpStatus().is5xxServerError()) {
+            log.error("{} on {}: {}", code, request.getRequestURI(), ex.getMessage(), ex);
         } else {
-            log.warn("Application error [{}] on {}: {}", status.value(), request.getRequestURI(), ex.getMessage());
+            log.warn("{} on {}: {}", code, request.getRequestURI(), ex.getMessage());
         }
+        return error(code, ex.getMessage(), request);
+    }
 
-        ErrorCode code = status.is5xxServerError() ? ErrorCode.INTERNAL_ERROR : ErrorCode.INVALID_REQUEST;
-        return build(status, code, ex.getMessage(), request, null);
+    /** An outbound call failed without an adapter translating it. */
+    @ExceptionHandler(WebClientException.class)
+    public ResponseEntity<ApiEnvelope<Void>> handleUpstream(WebClientException ex, HttpServletRequest request) {
+
+        ErrorCode code = timeoutOr(ErrorCode.DEPENDENCY_FAILURE, ex);
+        log.error("Untranslated upstream failure on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return error(code, code == ErrorCode.TIMEOUT
+                ? "A dependent service did not respond in time"
+                : "A dependent service failed", request);
     }
 
     /**
-     * Safety net. Logs the full stack trace but returns a generic message:
-     * an exception message can contain a SQL fragment, a file path or a
-     * token, and none of those belong in a response body.
+     * Safety net. Any remaining Spring MVC exception already knows its status
+     * ({@link ErrorResponse}); everything else is a 500 with a generic
+     * message, because an exception message can hold SQL, a path or a token.
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
+    public ResponseEntity<ApiEnvelope<Void>> handleUnexpected(Exception ex, HttpServletRequest request) {
+
+        if (ex instanceof ErrorResponse springError && springError.getStatusCode().is4xxClientError()) {
+            HttpStatusCode reported = springError.getStatusCode();
+            log.warn("{} on {}: {}", reported, request.getRequestURI(), ex.getMessage());
+            ErrorCode code = ErrorCode.forStatus(reported.value());
+            HttpStatus resolved = HttpStatus.resolve(reported.value());
+            // One HttpStatus for both the response line and the body, so they can't disagree.
+            HttpStatus status = resolved != null ? resolved : code.httpStatus();
+            return ResponseEntity.status(status).body(ApiEnvelope.error(
+                    status, code.name(), status.getReasonPhrase(), List.of(), request.getRequestURI()));
+        }
 
         log.error("Unhandled exception on {}", request.getRequestURI(), ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR,
-                "An unexpected error occurred. Please try again later.", request, null);
+        return error(ErrorCode.INTERNAL_ERROR, "An unexpected error occurred. Please try again later.", request);
     }
 
     // ----------------------------------------------------
-    // Helper
+    // Helpers
     // ----------------------------------------------------
 
-    private ResponseEntity<ErrorResponse> build(
-            HttpStatus status, ErrorCode errorCode, String message,
-            HttpServletRequest request, List<ErrorResponse.FieldError> fieldErrors) {
+    private ResponseEntity<ApiEnvelope<Void>> validationFailed(List<ApiFieldError> errors, HttpServletRequest request) {
+        return error(ErrorCode.VALIDATION_FAILED, VALIDATION_MESSAGE, errors, request);
+    }
 
-        ErrorResponse body = ErrorResponse.builder()
-                .status("ERROR")
-                .code(status.value())
-                .errorCode(errorCode)
-                .message(message)
-                .path(request.getRequestURI())
-                .timestamp(Instant.now())
-                // Set by CorrelationIdFilter; lets a caller quote one id when
-                // reporting a failure instead of describing when it happened.
-                .traceId(MDC.get(LogKeys.TRACE_ID))
-                .fieldErrors(fieldErrors)
-                .build();
+    private ResponseEntity<ApiEnvelope<Void>> error(ErrorCode code, String message, HttpServletRequest request) {
+        return error(code, message, List.of(), request);
+    }
 
-        return ResponseEntity.status(status).body(body);
+    private ResponseEntity<ApiEnvelope<Void>> error(ErrorCode code, String message,
+                                                    List<ApiFieldError> errors, HttpServletRequest request) {
+        return ResponseEntity.status(code.httpStatus()).body(envelope(code, message, errors, request));
+    }
+
+    private ApiEnvelope<Void> envelope(ErrorCode code, String message,
+                                       List<ApiFieldError> errors, HttpServletRequest request) {
+        return ApiEnvelope.error(code.httpStatus(), code.name(), message, errors, request.getRequestURI());
+    }
+
+    private List<ApiFieldError> toFieldErrors(Errors errors) {
+        List<ApiFieldError> result = new ArrayList<>();
+        errors.getFieldErrors().forEach(fe -> result.add(new ApiFieldError(
+                fe.getField(), FieldErrorCode.fromConstraint(fe.getCode()).name(), fe.getDefaultMessage())));
+        errors.getGlobalErrors().forEach(ge -> result.add(new ApiFieldError(
+                ge.getObjectName(), FieldErrorCode.fromConstraint(ge.getCode()).name(), ge.getDefaultMessage())));
+        return result;
+    }
+
+    /** Upgrades an upstream failure to {@code TIMEOUT} when any cause is a timeout. */
+    private ErrorCode timeoutOr(ErrorCode code, Throwable ex) {
+        if (code.httpStatus().value() != HttpStatus.BAD_GATEWAY.value()) {
+            return code;
+        }
+        for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            // Matched by name so the web layer needs no dependency on Netty's
+            // ReadTimeoutException / ConnectTimeoutException types.
+            if (t instanceof java.util.concurrent.TimeoutException
+                    || t instanceof java.net.SocketTimeoutException
+                    || t.getClass().getSimpleName().endsWith("TimeoutException")) {
+                return ErrorCode.TIMEOUT;
+            }
+        }
+        return code;
+    }
+
+    /** Name the client used: {@code @RequestParam("x")} / {@code @PathVariable("x")} value, else the Java name. */
+    private String requestName(MethodParameter parameter) {
+        RequestParam param = parameter.getParameterAnnotation(RequestParam.class);
+        if (param != null) {
+            String declared = firstNonBlank(param.name(), param.value());
+            if (declared != null) {
+                return declared;
+            }
+        }
+        PathVariable path = parameter.getParameterAnnotation(PathVariable.class);
+        if (path != null) {
+            String declared = firstNonBlank(path.name(), path.value());
+            if (declared != null) {
+                return declared;
+            }
+        }
+        String name = parameter.getParameterName();
+        return name != null ? name : "parameter";
+    }
+
+    private String headerName(RequestHeader header, MethodParameter parameter) {
+        String declared = firstNonBlank(header.name(), header.value());
+        return declared != null ? declared : String.valueOf(parameter.getParameterName());
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        return b != null && !b.isBlank() ? b : null;
+    }
+
+    /** {@code template.components[0].type} from Jackson's reference path. */
+    private String jsonPath(List<JsonMappingException.Reference> path) {
+        StringBuilder sb = new StringBuilder();
+        for (JsonMappingException.Reference ref : path) {
+            if (ref.getFieldName() != null) {
+                if (!sb.isEmpty()) {
+                    sb.append('.');
+                }
+                sb.append(ref.getFieldName());
+            } else {
+                sb.append('[').append(ref.getIndex()).append(']');
+            }
+        }
+        return sb.toString();
+    }
+
+    private String leafName(ConstraintViolation<?> violation) {
+        String leaf = null;
+        for (Path.Node node : violation.getPropertyPath()) {
+            leaf = node.getName();
+        }
+        return leaf != null ? leaf : "parameter";
+    }
+
+    private String constraintCode(ConstraintViolation<?> violation) {
+        return FieldErrorCode.fromConstraint(violation.getConstraintDescriptor()
+                .getAnnotation().annotationType().getSimpleName()).name();
     }
 }

@@ -20,12 +20,87 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
 | Entities are the schema source of truth | Hibernate `ddl-auto` manages tables; no Flyway/Liquibase. `db/migration/V1__initial_schema.sql` is a hand-kept reference only. |
 | YAML defaults stay as they are | Hardcoded `${ENV:default}` fallbacks in `application.yaml` / `application-dev.yaml` are intentionally kept. |
 | No broker, no cache, no Spring Security | Synchronous HTTP only; `/internal/**` guarded by `InternalApiAuthFilter`. |
-| Frozen read contract | `GET /api/v1/templates/{templateId}` and its `/internal` twin are read by the Messaging Service. |
+| Company API Standard | Headers, wrapper `{success, status, code, message, data, errors, meta}`, status codes, pagination and error format follow the API Standard (adopted 2026-09-24). See rules.md §7. |
+| Messaging read contract | `GET /api/v1/templates/{templateId}` and its `/internal` twin are read by the Messaging Service; path and `TemplateDetailResponseDto` must not change without that team. |
 | Docs location | `src/main/resources/docs/` — `prd.md`, `architecture.md`, `rules.md`, `memory.md`. |
 
 ---
 
 ## Change log
+
+### 2026-09-24 — Aligned with storage-service's API Standard migration
+Both services now speak the same standard; these changes make template ↔
+storage work in every environment, not just dev.
+- **Filter renamed** `RequestContextFilter` → `RequestIdFilter`. A `@Component`
+  named `RequestContextFilter` gets the bean name `requestContextFilter`, which
+  Spring Boot already registers (`WebMvcAutoConfiguration`), so the context
+  would fail to start. Same name as storage-service's filter now.
+- **Storage auth header:** storage now authenticates `X-Internal-Api-Key` (it
+  read only `X-Api-Key` before, so template's calls worked only with storage
+  auth disabled). Ops: storage's `TEMPLATE_SERVICE_API_KEY` must equal this
+  service's `INTERNAL_API_KEY`.
+- **Batch upload sends `X-Idempotency-Key`** (fresh UUID per call):
+  storage requires it on uploads and accepts no other name. storage's
+  `data.results[]` shape and per-file codes are unchanged; the batch is now
+  HTTP 200 (was 207).
+- **Strictly standard, no legacy:** `StorageApiResponse` reads only the
+  standard wrapper, and storage accepts only standard header names
+  (`X-Internal-Api-Key`, `X-Idempotency-Key`, `X-Request-Id`).
+- **New `ErrorCode.IDEMPOTENCY_KEY_REQUIRED`** (400) for a missing/malformed
+  `X-Idempotency-Key`, the same code storage returns (was `BAD_REQUEST`).
+- **Deploy both services together.** Neither side accepts the other's
+  pre-standard shape or headers; a mismatched pair loses media re-hosting during
+  sync (templates keep working but get no re-hosted `mediaUrl`).
+
+### 2026-09-24 — API Standard adopted (headers, wrapper, status codes, pagination, errors)
+Why: align this service with the company API Standard while the platform is
+still in development. **No use-case, domain-rule or Meta logic changed**; the
+work is at the HTTP edge (controllers, exception handling, filters, client
+filters). Contract changes for consumers:
+
+- **Wrapper:** `ResponseMessage` and `ErrorResponse` removed; every JSON
+  response is `ApiEnvelope {success, status, code, message, data, errors,
+  meta{requestId, timestamp, path?}}`. `status` is now the numeric HTTP status
+  (was the string `"SUCCESS"`/`"ERROR"`); `errorCode`→`code`, `fieldErrors`→
+  `errors` (`{field, code, message}`, no `rejectedValue`), `traceId`→
+  `meta.requestId`. `domain.enums.ResponseStatus` removed.
+  **Messaging Service must read `success`/HTTP status instead of `status == "SUCCESS"`.**
+- **Status codes:** create → 201 + `Location` (idempotent replay → 200);
+  single delete → 204 no body; bulk delete → 200 `{deletedCount}` (was
+  `DeleteResponseDto` with `projectId`/`templateId`); sync → 202
+  `{jobId, statusUrl}` (was `-1` counts); `InvalidTemplateStateException` 422 → 409.
+- **Meta rejection** on create/submit: was 200 + `status: "ERROR"`; now a
+  normal 2xx (`success: true`) with `data.status = FAILED` and
+  `data.errorMessage`; the message says Meta did not accept it.
+- **Errors:** `ErrorCode` rewritten to the standard vocabulary plus
+  `<RESOURCE>_<PROBLEM>` codes, each bound to its HTTP status;
+  `BaseApplicationException` now carries an `ErrorCode` instead of an
+  `HttpStatus`. Header problems → 400 `BAD_REQUEST`; invalid field values
+  (body, query, path, Meta rules) → 422 `VALIDATION_FAILED` with standard field
+  codes (Meta rules keep `META_*`). Upstream timeouts → 504 `TIMEOUT`.
+  `/error` answered by `ApiErrorController` in the same wrapper.
+- **Pagination:** `sortBy`/`sortDir` → `sort`/`order`; default size 10 → 20;
+  `sort` whitelisted (closes K3); `id` tie-breaker for stable pages; response
+  `data = {items, pagination}` instead of a serialized Spring `Page`.
+- **Headers:** `X-Org-Id` now required on every endpoint (was missing on
+  get/list/submit/delete and internal reads). `X-User-Id` accepted.
+  `CorrelationIdFilter` → `RequestIdFilter`: validates incoming
+  `X-Request-Id` (else generates a UUID), also runs on error dispatch. MDC key
+  `traceId` → `requestId`, plus `userId`; log pattern `[req= org= project= user=]`.
+  Outbound calls to waba/storage now pass on `X-Org-Id`, `X-Project-Id`,
+  `X-User-Id` from the MDC (adapter-set values win). `MdcTaskDecorator` on the
+  sync pool (closes the MDC half of K9). CORS exposes `Location`, `Retry-After`.
+- **Idempotency:** new `X-Idempotency-Key` support (`@Idempotent` on create
+  and submit), required by default (`idempotency.required`, env
+  `IDEMPOTENCY_REQUIRED`). New table `api_idempotency_keys` (reference DDL
+  added; **create it by hand in prod**, which runs `ddl-auto: validate`).
+  Hourly purge (`SchedulingConfig`). Same key + different request → 409
+  `IDEMPOTENCY_KEY_REUSED`; still running → 409 `IDEMPOTENCY_KEY_IN_PROGRESS`.
+- **Storage wrapper:** `StorageApiResponse` reads storage-service's standard
+  wrapper (`success`, numeric `status`, `code`); no pre-standard shape.
+- **Removed:** `TemplateResponseMapper.toListItem/toPage` (unused, entity-based).
+- **Tests:** `ApiStandardContractTest` (WebMvc slice pinning the contract) and
+  `ApiEnvelopeTest` (partially addresses K14).
 
 ### 2026-09-23 — Reference schema aligned with entities
 - `db/migration/V1__initial_schema.sql` checked column-by-column against the
@@ -143,14 +218,15 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
 |---|---|---|
 | K1 | `@Transactional` on `categorizeTemplates` / `persistChanges` has no effect (protected methods, self-invocation). Sync persistence is not atomic; each `saveAll`/soft-delete commits in `TemplateCommandServiceImpl`'s own transaction. **Accepted as-is (2026-09-23 decision): no change planned;** a later sync reconciles partial writes. | `SyncTemplateFromFacebookUseCaseImpl` |
 | K2 | Meta rule validation runs only on create; update-draft and submit skip `TemplateValidationService`. | `UpdateDraftTemplateUseCaseImpl`, `SubmitDraftToMetaUseCaseImpl` |
-| K3 | `sortBy` is not whitelisted; an unknown property fails at query time (500) instead of 400. | `TemplateQueryServiceImpl.listByProject` |
 | K6 | On a failed chunk upload the error uses `sessionResponse.getErrorMessage()` instead of the upload response's. | `WhatsappTemplateMediaUseCaseImpl` |
 | K7 | `markAsSucceeded` / `markAsNewCreated` use `TemplateStatus.valueOf`, which throws on an unknown Meta status; `TemplateStatus.parse()` exists but is unused. | `TemplateCommandServiceImpl` |
 | K8 | `metaStatusRaw`, `createdBy`, `qualityRating` are never set (quality stays `UNKNOWN`); `NEW_CREATED` is never assigned. | `WhatsappTemplate` |
-| K9 | Sync result is only logged; the API returns `-1` placeholder counts and has no status endpoint. MDC/trace id is not propagated to the sync pool. | sync |
+| K9 | Sync result is only logged; there is no job-status endpoint, so the 202 `statusUrl` points at the template list. (MDC is now propagated; the `jobId` is the request id and tags every sync log line.) | sync |
+| K16 | API Standard says delete of an already-deleted resource is 204; here it is 404 `TEMPLATE_NOT_FOUND`, because the soft-delete use case throws when no row matches. Left as-is to avoid changing use-case behaviour; decide with the frontend. | `TemplateCommandServiceImpl.softDeleteById` |
+| K17 | The list path is `/my-templates`; a standard REST collection read would be `GET /api/v1/templates`. Not required by the API Standard; left unchanged. | `ApiPaths.TEMPLATE_LIST` |
 | K11 | The reference SQL sits in `db/migration/` and begins with `drop schema`; if Flyway is ever added it would run automatically. | same |
 | K12 | `application-dev.yaml` datasource default points at `apargo_wa_messaging` (another service's schema). Kept as-is by decision. | `application-dev.yaml` |
-| K13 | Layering exceptions (do not add more): `application` imports `api.request` DTOs (commands wrap `BaseTemplateRequestDto`; validators, `WhatsappTemplateMapper`, `TemplateSyncMapper` read request DTOs; `SyncTemplateRequest` lives in `api.request`); media use case and `FacebookMediaUploadPort` return `api.response.media` types; `application` imports `infrastructure` (`MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR`, `MediaServiceProperties`); `infrastructure` imports `api` (`ErrorResponse` in `InternalApiAuthFilter`, media DTOs in `FacebookTemplateAdapter`); `api/mapper/TemplateResponseMapper.toListItem/toPage` take the entity (unused). | various |
+| K13 | Layering exceptions (do not add more): `application` imports `api.request` DTOs (commands wrap `BaseTemplateRequestDto`; validators, `WhatsappTemplateMapper`, `TemplateSyncMapper` read request DTOs; `SyncTemplateRequest` lives in `api.request`); media use case and `FacebookMediaUploadPort` return `api.response.media` types; `application` imports `infrastructure` (`MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR`, `MediaServiceProperties`); `infrastructure` imports `api` (`ApiEnvelope` in `InternalApiAuthFilter`, media DTOs in `FacebookTemplateAdapter`). | various |
 | K15 | `WhatsappTemplateVariablesRequestDto.labelValue` allows 500 chars (`@Size(max = 500)`) but the column is `length = 255`; a 256–500 char value passes validation and then fails at insert. | `WhatsappTemplateVariablesRequestDto`, `WhatsappTemplateVariable` |
 | K14 | Only test is `contextLoads`; no unit or integration tests for use cases, validators or adapters. | `src/test` |
 
@@ -161,7 +237,6 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
   (the save call in the media use case was removed earlier).
 - `MediaUrlMappingRequestDto`, `MediaLocation` enum.
 - `TemplateAuditEventType` enum.
-- `TemplateResponseMapper.toListItem` / `toPage` (entity-based).
 - `TemplateCommandService.markAsSucceeded`.
 - Unused import `ComponentFormat` in `WhatsappTemplateMapper`.
 

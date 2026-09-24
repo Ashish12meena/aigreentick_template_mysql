@@ -92,4 +92,4 @@ logging:
     root: WARN
     com.aigreentick.services.template: ${LOG_LEVEL:INFO}
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [trace=%X{traceId:-} org=%X{orgId:-} project=%X{projectId:-}] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-} org=%X{orgId:-} project=%X{projectId:-} user=%X{userId:-}] %logger{36} - %msg%n"

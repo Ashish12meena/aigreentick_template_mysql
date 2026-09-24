@@ -1,18 +1,19 @@
 package com.aigreentick.services.template.common.exception;
 
-import org.springframework.http.HttpStatus;
+import com.aigreentick.services.template.common.error.ErrorCode;
 
 /**
- * Thrown when an external service (Facebook API, Media Service) fails.
- * Maps to HTTP 502 Bad Gateway.
+ * An upstream (Meta Graph API, waba-service, storage-service) failed.
+ * HTTP 502 {@code DEPENDENCY_FAILURE}; the exception handler upgrades it to
+ * 504 {@code TIMEOUT} when the cause is a timeout.
  */
 public class ExternalServiceException extends BaseApplicationException {
 
     public ExternalServiceException(String message) {
-        super(message, HttpStatus.BAD_GATEWAY);
+        super(ErrorCode.DEPENDENCY_FAILURE, message);
     }
 
     public ExternalServiceException(String message, Throwable cause) {
-        super(message, cause, HttpStatus.BAD_GATEWAY);
+        super(ErrorCode.DEPENDENCY_FAILURE, message, cause);
     }
 }

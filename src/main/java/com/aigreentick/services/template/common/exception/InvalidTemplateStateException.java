@@ -1,15 +1,16 @@
 package com.aigreentick.services.template.common.exception;
 
-import org.springframework.http.HttpStatus;
+import com.aigreentick.services.template.common.error.ErrorCode;
 
 /**
- * Thrown when an operation is attempted on a resource in an invalid state.
- * E.g., submitting a non-DRAFT template, updating an approved template.
- * Maps to HTTP 422 Unprocessable Entity.
+ * The template's current status does not allow the operation, e.g. updating
+ * or submitting a template that is no longer a draft. The request itself is
+ * valid; it clashes with the current state, hence HTTP 409
+ * {@code TEMPLATE_INVALID_STATE} (API Standard §6).
  */
 public class InvalidTemplateStateException extends BaseApplicationException {
 
     public InvalidTemplateStateException(String message) {
-        super(message, HttpStatus.UNPROCESSABLE_ENTITY);
+        super(ErrorCode.TEMPLATE_INVALID_STATE, message);
     }
 }

@@ -1,18 +1,18 @@
 package com.aigreentick.services.template.common.exception;
 
-import org.springframework.http.HttpStatus;
+import com.aigreentick.services.template.common.error.ErrorCode;
 
 /**
- * Thrown when media upload to Facebook or internal storage fails.
- * Maps to HTTP 502 Bad Gateway.
+ * Media upload to Meta or to storage-service failed. HTTP 502
+ * {@code MEDIA_UPLOAD_FAILED}.
  */
 public class MediaUploadException extends BaseApplicationException {
 
     public MediaUploadException(String message) {
-        super(message, HttpStatus.BAD_GATEWAY);
+        super(ErrorCode.MEDIA_UPLOAD_FAILED, message);
     }
 
     public MediaUploadException(String message, Throwable cause) {
-        super(message, cause, HttpStatus.BAD_GATEWAY);  // FIX: cause was being swallowed before
+        super(ErrorCode.MEDIA_UPLOAD_FAILED, message, cause);
     }
 }

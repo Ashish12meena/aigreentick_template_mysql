@@ -1,7 +1,7 @@
 # Template Service — Architecture
 
 Describes the service **as implemented**. If code and this file disagree, the
-code wins and this file must be updated. Last reviewed: 2026-09-23.
+code wins and this file must be updated. Last reviewed: 2026-09-24.
 
 ## 1. What this service is
 
@@ -73,8 +73,9 @@ Root package: `com.aigreentick.services.template`
 api/                 HTTP boundary
   v1/                  TemplateController           (/api/v1/templates)
   internal/v1/         InternalTemplateController   (/internal/v1/templates)
-  advice/              GlobalExceptionHandler
-  request/ response/   DTOs (response/error/ErrorResponse, response/media/*)
+  advice/              GlobalExceptionHandler, ApiErrorController (/error)
+  request/ response/   DTOs (response/common: ApiEnvelope, PageResponse, Pagination, Responses; response/media/*)
+  validation/          @OneOf constraint
   mapper/              API DTO <-> application command/result
 application/         Use cases and orchestration
   port/in/             driving ports (one interface per use case)
@@ -91,9 +92,10 @@ domain/              Persistence model
   service/             TemplateQueryService / TemplateCommandService (+ impl/)
 infrastructure/      Adapters and wiring
   client/              facebook/ (FacebookTemplateAdapter), account/ (waba-service), media/ (storage-service)
-  config/              WebClientConfig, MediaSyncThreadPoolConfig, CorsConfig, OpenApiConfig, properties/
+  config/              WebClientConfig, MediaSyncThreadPoolConfig, CorsConfig, OpenApiConfig, WebMvcConfig, SchedulingConfig, properties/
+  idempotency/         X-Idempotency-Key: filter, interceptor, store, IdempotencyRecord entity
   security/            InternalApiAuthFilter
-common/              Cross-cutting: constant/, error/ErrorCode, exception/, logging/, util/helper/
+common/              Cross-cutting: constant/, error/ (ErrorCode, FieldErrorCode), exception/, logging/, web/@Idempotent, util/helper/
 ```
 
 Dependency direction actually in the code (see `memory.md` K13 for the known exceptions):
@@ -108,50 +110,63 @@ common ◀── everyone
 ## 4. Request path
 
 ```
-CorrelationIdFilter        (HIGHEST_PRECEDENCE) X-Request-Id → MDC traceId, + orgId/projectId; echoes X-Request-Id
-  InternalApiAuthFilter    only for /internal/**; constant-time key check → 401 ErrorResponse
-    Controller             validation annotations only; delegates to a port.in use case
-      UseCase              validation, transactions, orchestration
-        Query/Command service → Spring Data repositories → MySQL
-        port.out adapter      → WebClient → waba-service / storage-service / Meta
-GlobalExceptionHandler     maps exceptions → ErrorResponse + HTTP status
+RequestIdFilter            (HIGHEST_PRECEDENCE) X-Request-Id (validated or generated) + org/project/user → MDC; echoes X-Request-Id
+  IdempotencyCachingFilter only POST with X-Idempotency-Key: buffers JSON body and response
+    InternalApiAuthFilter  only for /internal/**; constant-time key check → 401 ApiEnvelope (UNAUTHENTICATED)
+      IdempotencyInterceptor  only @Idempotent handlers: reserve key / replay stored response / 409
+        Controller         validation annotations only; delegates to a port.in use case; wraps via Responses
+          UseCase          validation, transactions, orchestration
+            Query/Command service → Spring Data repositories → MySQL
+            port.out adapter      → WebClient (+ request-context headers from MDC) → waba-service / storage-service / Meta
+GlobalExceptionHandler     maps exceptions → ApiEnvelope error + HTTP status from ErrorCode
+ApiErrorController         /error fallback (container-level failures) in the same wrapper
 ```
 
 ## 5. API surface
 
 Public base: `/api/v1/templates`. All routes are constants in `ApiPaths`.
 
-| Method | Path | Headers | Use case |
-|---|---|---|---|
-| POST | `/api/v1/templates` | Project, Org, Waba | `CreateTemplateUseCase` |
-| GET | `/api/v1/templates/{templateId}` | Project | `GetTemplateUseCase.getById` — **frozen** |
-| GET | `/api/v1/templates/my-templates` | Project | `GetTemplateUseCase.list` |
-| GET | `/api/v1/templates/lookup?name=&language=` | Project, Waba | `GetTemplateUseCase.getByNameAndLanguage` |
-| PUT | `/api/v1/templates/{templateId}/draft` | Project, Org, Waba | `UpdateDraftTemplateUseCase` |
-| POST | `/api/v1/templates/{templateId}/submit` | Project | `SubmitDraftToMetaUseCase` |
-| DELETE | `/api/v1/templates/{templateId}?deleteFromMeta=` | Project | `DeleteTemplateUseCase.deleteById` |
-| DELETE | `/api/v1/templates` | Project | `DeleteTemplateUseCase.deleteAllByProject` |
-| POST | `/api/v1/templates/sync` | Project, Org, Waba | `SyncTemplateFromFacebookUseCase` (202) |
-| POST | `/api/v1/templates/media` (multipart `file`) | Project, Org, Waba, App | `WhatsappTemplateMediaUseCase` |
-| GET | `/internal/v1/templates/{templateId}` | Project, `X-Internal-Api-Key` | same as public getById |
-| GET | `/internal/v1/templates/lookup` | Project, Waba, `X-Internal-Api-Key` | same as public lookup |
+| Method | Path | Headers | Result | Use case |
+|---|---|---|---|---|
+| POST | `/api/v1/templates` | Org, Project, Waba, Idempotency-Key | 201 + `Location` | `CreateTemplateUseCase` |
+| GET | `/api/v1/templates/{templateId}` | Org, Project | 200 | `GetTemplateUseCase.getById` — read by Messaging |
+| GET | `/api/v1/templates/my-templates?page&size&sort&order&status&category&search` | Org, Project | 200 `{items, pagination}` | `GetTemplateUseCase.list` |
+| GET | `/api/v1/templates/lookup?name=&language=` | Org, Project, Waba | 200 | `GetTemplateUseCase.getByNameAndLanguage` |
+| PUT | `/api/v1/templates/{templateId}/draft` | Org, Project, Waba | 200 | `UpdateDraftTemplateUseCase` |
+| POST | `/api/v1/templates/{templateId}/submit` | Org, Project, Idempotency-Key | 200 | `SubmitDraftToMetaUseCase` |
+| DELETE | `/api/v1/templates/{templateId}?deleteFromMeta=` | Org, Project | 204 | `DeleteTemplateUseCase.deleteById` |
+| DELETE | `/api/v1/templates` | Org, Project | 200 `{deletedCount}` | `DeleteTemplateUseCase.deleteAllByProject` |
+| POST | `/api/v1/templates/sync` | Org, Project, Waba | 202 `{jobId, statusUrl}` | `SyncTemplateFromFacebookUseCase` |
+| POST | `/api/v1/templates/media` (multipart `file`) | Org, Project, Waba, App | 200 | `WhatsappTemplateMediaUseCase` |
+| GET | `/internal/v1/templates/{templateId}` | Org, Project, `X-Internal-Api-Key` | 200 | same as public getById |
+| GET | `/internal/v1/templates/lookup` | Org, Project, Waba, `X-Internal-Api-Key` | 200 | same as public lookup |
 
-Headers (`ApiHeaders`): `X-Org-Id`, `X-Project-Id` (positive longs), `X-Waba-Id`
-(Meta WABA id, string), `X-App-Id` (Meta app id; media upload only),
-`X-Request-Id` (optional correlation id).
+Headers (`ApiHeaders`, API Standard §1): `X-Org-Id`, `X-Project-Id` (positive
+longs, required); `X-User-Id` (optional); `X-Request-Id` (optional, validated
+`[A-Za-z0-9._:-]{1,128}`, generated otherwise, always echoed — the only
+tracking header); `X-Idempotency-Key` (create and submit); service-specific
+`X-Waba-Id` (Meta WABA id) and `X-App-Id` (media upload only).
 Internal (`InternalHeaders`): `X-Internal-Api-Key`, optional `X-Internal-Caller`.
+A missing or unusable header is `400 BAD_REQUEST`.
 
 **JSON naming:** this service's own API is **camelCase** (Jackson default; no
 global naming strategy). Meta payloads are **snake_case** and are handled
 separately (§8).
 
-**Envelopes:**
+**Response wrapper** (`ApiEnvelope`, API Standard §4), for every JSON body:
+`{success, status, code, message, data, errors, meta{requestId, timestamp, path?}}`.
 
-- Success: `ResponseMessage {status: "SUCCESS"|"ERROR", message, data}`.
-  `"ERROR"` with HTTP 200 is used only for *partial failure* on create/submit
-  (saved locally, rejected by Meta).
-- Error: `ErrorResponse {status, code, errorCode, message, path, timestamp, traceId, fieldErrors[]}`.
-  `errorCode` is a stable `ErrorCode` enum value; clients branch on it, never on `message`.
+- Built only through `Responses.ok/created/accepted/noContent` (controllers)
+  and `ApiEnvelope.error` (handler, filters), which take one `HttpStatus` for
+  both the response and the body, so `status` always equals the HTTP status.
+  The wrapper rejects a non-2xx success or a 2xx error at construction.
+- Success: `code: "SUCCESS"`, `errors: []`. Error: `data: null`, `meta.path` set.
+- Lists: `data = PageResponse {items, pagination{page, size, totalItems, totalPages, hasNext, hasPrevious}}`.
+- `@JsonInclude(ALWAYS)` on the wrapper overrides the global `non_null` so
+  `data: null` and `errors: []` are always present.
+- Documented wrapper exception: single delete returns `204` with no body.
+- Meta rejection on create/submit is a 2xx: the template exists (status
+  `FAILED`) and `data.errorMessage` / `data.errorPayload` explain why.
 
 Actuator: `/actuator/health` (liveness/readiness probes enabled), `info`,
 `metrics`; `prometheus` is additionally exposed in `prod`.
@@ -159,9 +174,10 @@ Swagger UI is disabled by default in `prod` (`SWAGGER_UI_ENABLED`).
 
 ## 6. Authentication and tenancy
 
-- **Public `/api/v1/**`: no authentication in this service.** Tenancy comes
-  from `X-Org-Id` / `X-Project-Id` / `X-Waba-Id`, which the gateway is
-  responsible for populating from an authenticated session. They are validated
+- **Public `/api/v1/**`: no authentication in this service.** The gateway
+  validates `Authorization: Bearer` and populates `X-Org-Id` / `X-Project-Id` /
+  `X-User-Id` from the session (Spring Security is out of scope, rules.md §1.11).
+  `X-Waba-Id` comes from the client. They are validated
   (`@Positive`, `@NotBlank`) but not verified.
 - **Every query is scoped by `projectId`** (and by `wabaId` where relevant),
   so a caller can only reach templates of the project it asserts.
@@ -172,8 +188,9 @@ Swagger UI is disabled by default in `prod` (`SWAGGER_UI_ENABLED`).
   caller. `internal.api.path-prefix` must equal `ApiPaths.INTERNAL` — checked
   at startup.
 - **Outbound:** `WebClientConfig` attaches `X-Internal-Api-Key`,
-  `X-Internal-Caller: template-service` and `X-Request-Id` to waba-service and
-  storage-service calls centrally. Meta receives none of these — only the
+  `X-Internal-Caller: template-service`, and passes on `X-Request-Id`,
+  `X-Org-Id`, `X-Project-Id`, `X-User-Id` from the MDC (unless the adapter set
+  one explicitly) to waba-service and storage-service calls centrally. Meta receives none of these — only the
   WABA access token (Bearer, `OAuth` header for resumable upload, or
   `access_token` query param for session start / offset).
 
@@ -186,7 +203,7 @@ its own connect/read timeout and in-memory buffer limit, an explicit camelCase
 | Upstream | Call | Adapter / port |
 |---|---|---|
 | waba-service | `GET {base}/internal/v1/waba-credentials/by-waba/{wabaId}` with `X-Org-Id`, `X-Project-Id` | `WabaCredentialAdapter` / `WabaCredentialPort` |
-| storage-service | `POST {base}/api/v1/media/upload/batch` multipart, with `X-Org-Id`, `X-Project-Id`, `X-Waba-Id` | `InternalMediaAdapter` / `InternalMediaPort` |
+| storage-service | `POST {base}/api/v1/media/upload/batch` multipart, with `X-Org-Id`, `X-Project-Id`, `X-Waba-Id` and a fresh `X-Idempotency-Key` (required by storage); reads the standard wrapper only | `InternalMediaAdapter` / `InternalMediaPort` |
 | Meta | `POST /{ver}/{wabaId}/message_templates` (create) | `FacebookTemplateAdapter` / `FacebookTemplatePort` |
 | Meta | `GET /{ver}/{wabaId}/message_templates?limit=200&after=` (list, paginated) | `FacebookTemplateAdapter` / `FacebookTemplateSyncPort` |
 | Meta | `DELETE /{ver}/{wabaId}/message_templates?name=` | `FacebookTemplateAdapter` / `FacebookTemplatePort` |
@@ -214,25 +231,35 @@ auto-configuration back off for the whole API).
 
 ## 9. Error handling
 
-`GlobalExceptionHandler` is the only place exceptions become HTTP.
+`GlobalExceptionHandler` is the only place exceptions become HTTP. Every
+`BaseApplicationException` carries an `ErrorCode`, and each `ErrorCode` carries
+its HTTP status, so one handler renders them all.
 
-| Exception | HTTP | `errorCode` |
-|---|---|---|
-| Bean validation (body, params, headers) | 400 | `VALIDATION_FAILED` |
-| Unreadable / malformed body, type mismatch | 400 | `INVALID_REQUEST` / `MALFORMED_REQUEST_BODY` |
-| Missing param or header | 400 | `MISSING_PARAMETER` |
-| `ResourceNotFoundException` | 404 | `RESOURCE_NOT_FOUND` |
-| Unknown route | 404 | `ENDPOINT_NOT_FOUND` |
-| Wrong method | 405 | `METHOD_NOT_ALLOWED` |
-| `DuplicateResourceException`, `DataIntegrityViolationException` | 409 | `DUPLICATE_RESOURCE` |
-| `InvalidTemplateStateException` | 422 | `INVALID_TEMPLATE_STATE` |
-| `TemplateRuleViolationException` (all violations listed in `fieldErrors`) | 422 | `TEMPLATE_RULE_VIOLATION` |
-| Upload too large | 413 | `PAYLOAD_TOO_LARGE` |
-| `WhatsappCredentialsNotFoundException` | 502 | `UPSTREAM_CREDENTIAL_UNAVAILABLE` |
-| `MediaUploadException` | 502 | `UPSTREAM_MEDIA_UPLOAD_FAILED` |
-| `ExternalServiceException` | 502 | `UPSTREAM_META_API_FAILED` |
-| anything else | 500 | `INTERNAL_ERROR` |
-| bad internal key (filter) | 401 | `UNAUTHORIZED` |
+| Situation | HTTP | `code` | `errors[]` |
+|---|---|---|---|
+| Missing header, invalid header value, unparseable JSON | 400 | `BAD_REQUEST` | – |
+| Missing or malformed `X-Idempotency-Key` on an `@Idempotent` endpoint | 400 | `IDEMPOTENCY_KEY_REQUIRED` | – |
+| Bad internal API key (filter) | 401 | `UNAUTHENTICATED` | – |
+| Unknown route | 404 | `NOT_FOUND` | – |
+| `ResourceNotFoundException` (template) | 404 | `TEMPLATE_NOT_FOUND` | – |
+| Wrong method | 405 | `METHOD_NOT_ALLOWED` (+ `Allow`) | – |
+| `DuplicateResourceException` (template) | 409 | `TEMPLATE_ALREADY_EXISTS` | – |
+| `DataIntegrityViolationException` | 409 | `CONFLICT` | – |
+| `InvalidTemplateStateException` | 409 | `TEMPLATE_INVALID_STATE` | – |
+| Idempotency key still running / reused for another request | 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` / `IDEMPOTENCY_KEY_REUSED` | – |
+| Upload too large | 413 | `PAYLOAD_TOO_LARGE` | – |
+| Wrong Content-Type | 415 | `UNSUPPORTED_MEDIA_TYPE` | – |
+| Bean validation (body, query, path), missing query param/part, bad enum or type in query/body | 422 | `VALIDATION_FAILED` | `REQUIRED`, `INVALID_VALUE`, `OUT_OF_RANGE`, `TOO_LONG`, `INVALID_FORMAT` |
+| `TemplateRuleViolationException` | 422 | `VALIDATION_FAILED` | one per rule, `META_*` codes |
+| anything else | 500 | `INTERNAL_ERROR` (generic message) | – |
+| `WhatsappCredentialsNotFoundException` | 502 | `WABA_CREDENTIALS_UNAVAILABLE` | – |
+| `MediaUploadException` | 502 | `MEDIA_UPLOAD_FAILED` | – |
+| `ExternalServiceException`, untranslated `WebClientException` | 502 | `DEPENDENCY_FAILURE` | – |
+| Any 502 whose cause chain holds a timeout | 504 | `TIMEOUT` | – |
+
+Field names in `errors[]` are as sent: `template.components[0].text`, `size`.
+Failures before the dispatcher (container errors) reach `ApiErrorController`
+at `/error` and use the same wrapper.
 
 ## 10. Data model
 
@@ -253,8 +280,11 @@ whatsapp_templates (root, soft-deleted)
  │           └─ whatsapp_template_carousel_buttons
  └─ whatsapp_template_variables
 whatsapp_template_media_uploads (standalone; currently unused — see memory.md)
+api_idempotency_keys            (standalone; infrastructure.idempotency.IdempotencyRecord)
 ```
 
+- `api_idempotency_keys` must be created by hand in prod (`ddl-auto: validate`);
+  DDL is in the reference script.
 - Children are owned via `cascade = ALL, orphanRemoval = true`; replacing a
   draft's components clears and re-adds them.
 - `whatsapp_templates` unique key `uk_waba_template (waba_id, name, language)`.
@@ -273,13 +303,17 @@ whatsapp_template_media_uploads (standalone; currently unused — see memory.md)
   `media-sync.pool-size` = 15, queue 100, `CallerRunsPolicy`, graceful
   shutdown wait 30 s). Phases: fetch all pages from Meta → categorize against
   DB → download/re-host media → persist. Outcome is only logged; the API
-  returns placeholder counts (`-1`).
+  returns `{jobId, statusUrl}` where `jobId` is the request id.
 - **Media re-hosting** downloads in parallel on the same pool, then uploads to
   storage-service in chunks bounded by `media-service.batch.max-bytes`
   (80 MB) and `max-files` (20). Best-effort: a failure leaves the component
   with no re-hosted `mediaUrl` and logs WARN/ERROR; the sync still persists.
-- **MDC is not propagated** to the pool, so background calls carry no
-  `X-Request-Id`.
+- **MDC is propagated** to the pool by `MdcTaskDecorator`, so background logs
+  carry the originating request id (the sync `jobId`) and background calls
+  pass on `X-Request-Id` and tenancy headers.
+- **Idempotency keys** live in `api_idempotency_keys` (org + project + key
+  unique). Reserve/complete/release run in their own `REQUIRES_NEW`
+  transactions; expired rows are purged hourly (`SchedulingConfig`).
 
 ## 12. Configuration and environments
 
@@ -288,8 +322,8 @@ whatsapp_template_media_uploads (standalone; currently unused — see memory.md)
 - All custom settings bind through `@ConfigurationProperties` classes in
   `infrastructure/config/properties`, registered in `PropertiesRegistrationConfig`:
   `internal.api.*`, `facebook-service.*`, `waba-service.*`, `media-service.*`,
-  `media-sync.*`, `cors.*`.
+  `media-sync.*`, `cors.*`, `idempotency.*`.
 - `prod` requires env for datasource, `INTERNAL_API_KEY`, `CORS_ALLOWED_ORIGINS`,
   `EUREKA_DEFAULT_ZONE`; uses `ddl-auto: validate`, Hikari leak detection, and
   `server.forward-headers-strategy: framework`.
-- Logs: console pattern includes `trace`, `org`, `project` from the MDC.
+- Logs: console pattern includes `req`, `org`, `project`, `user` from the MDC.

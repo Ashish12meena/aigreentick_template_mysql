@@ -1,19 +1,18 @@
 package com.aigreentick.services.template.common.exception;
 
-import org.springframework.http.HttpStatus;
+import com.aigreentick.services.template.common.error.ErrorCode;
 
 /**
- * Thrown when a requested resource does not exist.
- * Maps to HTTP 404 Not Found.
+ * The requested resource does not exist, or is not visible to the calling
+ * project. HTTP 404.
  */
 public class ResourceNotFoundException extends BaseApplicationException {
 
-    public ResourceNotFoundException(String message) {
-        super(message, HttpStatus.NOT_FOUND);
+    public ResourceNotFoundException(ErrorCode errorCode, String message) {
+        super(errorCode, message);
     }
 
-    public ResourceNotFoundException(String resourceName, String fieldName, Object fieldValue) {
-        super(String.format("%s not found with %s: '%s'", resourceName, fieldName, fieldValue),
-                HttpStatus.NOT_FOUND);
+    public ResourceNotFoundException(ErrorCode errorCode, String resourceName, String fieldName, Object fieldValue) {
+        super(errorCode, String.format("%s not found with %s: '%s'", resourceName, fieldName, fieldValue));
     }
 }
