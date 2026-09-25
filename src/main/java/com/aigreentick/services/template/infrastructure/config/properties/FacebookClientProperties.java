@@ -47,6 +47,15 @@ public class FacebookClientProperties {
     @Positive
     private int maxInMemorySizeBytes = 16 * 1024 * 1024;
 
+    /**
+     * Page size ({@code limit}) for listing message templates, used when the
+     * caller does not pass one - sync pagination and the stuck-SUBMITTED
+     * reconciler's lookup by name. Larger pages mean fewer Graph calls per
+     * sync; keep it within what maxInMemorySizeBytes can decode.
+     */
+    @Positive
+    private int templatePageSize = 200;
+
     /** Convenience: {@code {baseUrl}/{apiVersion}}. */
     public String versionedBaseUrl() {
         return baseUrl + "/" + apiVersion;

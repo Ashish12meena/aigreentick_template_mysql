@@ -284,12 +284,24 @@ public class WhatsappTemplateMapper {
         return TemplateResult.builder()
                 .id(template.getId())
                 .name(template.getName())
-                .status(TemplateStatus.valueOf(status.toUpperCase()))
-                .category(category != null ? TemplateCategory.valueOf(category.toUpperCase()) : template.getCategory())
+                // Never throw on Meta's strings: this runs after Meta accepted.
+                .status(TemplateStatus.parse(status).orElse(TemplateStatus.UNKNOWN))
+                .category(parseCategoryOr(category, template.getCategory()))
                 .language(template.getLanguage())
                 .metaTemplateId(metaTemplateId)
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .build();
+    }
+
+    private static TemplateCategory parseCategoryOr(String raw, TemplateCategory fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return TemplateCategory.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return fallback;
+        }
     }
 }

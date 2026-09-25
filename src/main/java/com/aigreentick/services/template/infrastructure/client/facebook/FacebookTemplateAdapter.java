@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -54,6 +55,21 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
 
         /**
          * Sends a WhatsApp template to Facebook for approval.
+         *
+         * <p>The three outcomes are kept distinct because the caller must treat
+         * them differently:
+         * <ul>
+         *   <li><b>2xx</b> - {@code success}, body is Meta's JSON.</li>
+         *   <li><b>HTTP error from Meta</b> - {@code error} with Meta's real
+         *       status code and its raw JSON body as the message. A 4xx is a
+         *       definitive rejection.</li>
+         *   <li><b>No HTTP response</b> (timeout, connection reset, ...) -
+         *       {@code error} with status {@code 0}. Meta may or may not have
+         *       created the template; the caller must not assume either.</li>
+         * </ul>
+         * Before this, both HTTP errors were thrown as plain RuntimeExceptions,
+         * so every Meta 4xx arrived as a "500 Internal Server Error" string and
+         * the {@code WebClientResponseException} branch below never ran.
          */
         public FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId, String accessToken) {
 
@@ -71,22 +87,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                         .contentType(MediaType.APPLICATION_JSON)
                                         .bodyValue(bodyJson)
                                         .retrieve()
-                                        .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
-                                                        .flatMap(errorBody -> {
-                                                                log.error("Facebook API 4xx error for WABA_ID={}: {}",
-                                                                                wabaId, errorBody);
-                                                                return Mono.error(new RuntimeException(
-                                                                                "Facebook API returned 4xx: "
-                                                                                                + errorBody));
-                                                        }))
-                                        .onStatus(HttpStatusCode::is5xxServerError, r -> r.bodyToMono(String.class)
-                                                        .flatMap(errorBody -> {
-                                                                log.error("Facebook API 5xx error for WABA_ID={}: {}",
-                                                                                wabaId, errorBody);
-                                                                return Mono.error(new RuntimeException(
-                                                                                "Facebook API returned 5xx: "
-                                                                                                + errorBody));
-                                                        }))
+                                        .onStatus(HttpStatusCode::isError, ClientResponse::createException)
                                         .bodyToMono(JsonNode.class)
                                         .block();
 
@@ -94,13 +95,16 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                         return FacebookApiResponse.success(response, 200);
 
                 } catch (WebClientResponseException ex) {
-                        log.error("Failed to send template. WABA_ID={} Status={} Response={}", wabaId,
+                        log.error("Facebook rejected template. WABA_ID={} Status={} Response={}", wabaId,
                                         ex.getStatusCode().value(), ex.getResponseBodyAsString());
                         return FacebookApiResponse.error(ex.getResponseBodyAsString(), ex.getStatusCode().value());
 
                 } catch (Exception ex) {
-                        log.error("Unexpected error while sending template to Facebook. WABA_ID={}", wabaId, ex);
-                        return FacebookApiResponse.error("Internal Server Error: " + ex.getMessage(), 500);
+                        log.error("No response from Facebook while sending template - outcome unknown. WABA_ID={}",
+                                        wabaId, ex);
+                        return FacebookApiResponse.error(
+                                        "No response from Facebook: " + ex.getMessage(),
+                                        FacebookApiResponse.NO_RESPONSE);
                 }
         }
 
@@ -125,7 +129,8 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                 language.ifPresent(l -> builder.queryParam("language", l));
                 category.ifPresent(c -> builder.queryParam("category", c));
                 name.ifPresent(n -> builder.queryParam("name", n));
-                limit.ifPresent(l -> builder.queryParam("limit", l));
+                // Default page size is configuration (facebook-service.template-page-size).
+                builder.queryParam("limit", limit.orElse(properties.getTemplatePageSize()));
                 after.ifPresent(a -> builder.queryParam("after", a));
 
                 URI uri = builder.build().toUri();

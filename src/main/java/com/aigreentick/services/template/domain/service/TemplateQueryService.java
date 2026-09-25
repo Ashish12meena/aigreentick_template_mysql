@@ -1,6 +1,8 @@
 package com.aigreentick.services.template.domain.service;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.data.domain.Page;
@@ -24,7 +26,14 @@ public interface TemplateQueryService {
             Long projectId, TemplateStatus status, TemplateCategory category,
             String search, int page, int size, String sortBy, String sortDir);
 
-    boolean existsNonDraft(String wabaId, String name, String language, Long excludeTemplateId);
+    /** True if another LIVE template (not DRAFT / FAILED / deleted) uses this name on the WABA. */
+    boolean existsLive(String wabaId, String name, String language, Long excludeTemplateId);
+
+    /** SUBMITTED templates whose Meta outcome was not recorded before {@code cutoff}. */
+    List<WhatsappTemplate> findStuckSubmitted(Instant cutoff, int limit);
+
+    /** A live row for this name with no Meta id yet (an unresolved SUBMITTED row). */
+    Optional<WhatsappTemplate> findLiveWithoutMetaId(String wabaId, String name, String language);
 
     Set<String> findSyncedMetaIds(Long projectId, String wabaAccountId);
 

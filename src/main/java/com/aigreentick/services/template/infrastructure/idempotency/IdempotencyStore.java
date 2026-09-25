@@ -96,8 +96,9 @@ public class IdempotencyStore {
         repository.deleteById(recordId);
     }
 
-    /** Hourly clean-up of keys past their replay window. */
-    @Scheduled(fixedDelay = 3_600_000L, initialDelay = 60_000L)
+    /** Periodic clean-up of keys past their replay window (default hourly; see IdempotencyProperties). */
+    @Scheduled(fixedDelayString = "${idempotency.purge-interval:PT1H}",
+            initialDelayString = "${idempotency.purge-initial-delay:PT1M}")
     @Transactional
     public void purgeExpired() {
         int deleted = repository.deleteCreatedBefore(Instant.now().minus(properties.getTtl()));

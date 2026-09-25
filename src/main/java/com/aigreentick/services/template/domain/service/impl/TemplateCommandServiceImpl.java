@@ -2,6 +2,7 @@ package com.aigreentick.services.template.domain.service.impl;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
@@ -9,7 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.aigreentick.services.template.common.error.ErrorCode;
 import com.aigreentick.services.template.common.exception.DuplicateResourceException;
+import com.aigreentick.services.template.common.exception.InvalidTemplateStateException;
 import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
+import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 import com.aigreentick.services.template.domain.repository.WhatsappTemplateCommandRepository;
@@ -42,34 +45,110 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
 
     @Override
     public void markAsSubmitted(WhatsappTemplate template) {
+        int changed = commandRepo.transitionStatus(
+                template.getId(), TemplateStatus.DRAFT, TemplateStatus.SUBMITTED, Instant.now());
+        if (changed == 0) {
+            throw new InvalidTemplateStateException(String.format(
+                    "Template id=%d is no longer a DRAFT (already submitted or deleted)", template.getId()));
+        }
         template.setStatus(TemplateStatus.SUBMITTED);
-        commandRepo.save(template);
     }
 
     @Override
-    public void markAsSucceeded(WhatsappTemplate template,
-            String metaTemplateId, String status, String metaResponse) {
-        template.setMetaTemplateId(metaTemplateId);
-        template.setStatus(TemplateStatus.valueOf(status.toUpperCase()));
-        template.setMetaResponse(metaResponse);
-        commandRepo.save(template);
+    public boolean markAsAcceptedByMeta(WhatsappTemplate template, String metaTemplateId,
+            String metaStatus, String metaCategory, String metaResponse) {
+
+        Optional<WhatsappTemplate> row = loadIfSubmitted(template.getId(), "accepted-by-Meta");
+        if (row.isEmpty()) {
+            return false;
+        }
+        WhatsappTemplate managed = row.get();
+
+        TemplateStatus status = TemplateStatus.parse(metaStatus).orElse(TemplateStatus.UNKNOWN);
+        if (status == TemplateStatus.UNKNOWN || !status.isLive()) {
+            // Meta accepted the request, so the template exists there: it must
+            // stay live. A status we don't model (or a nonsensical DRAFT /
+            // FAILED) is recorded as UNKNOWN; the raw value is kept for sync.
+            log.warn("Unrecognised Meta status '{}' for templateId={} - stored as UNKNOWN",
+                    metaStatus, template.getId());
+            status = TemplateStatus.UNKNOWN;
+        }
+
+        managed.setMetaTemplateId(metaTemplateId);
+        managed.setStatus(status);
+        managed.setMetaStatusRaw(metaStatus);
+        managed.setMetaResponse(metaResponse);
+        managed.setRejectionReason(null);
+
+        // Meta may re-categorise on create (e.g. UTILITY -> MARKETING).
+        TemplateCategory category = parseCategory(metaCategory);
+        if (category != null && category != managed.getCategory()) {
+            log.info("Meta re-categorised templateId={} {} -> {}",
+                    template.getId(), managed.getCategory(), category);
+            managed.setPreviousCategory(managed.getCategory());
+            managed.setCategory(category);
+        }
+
+        commandRepo.saveAndFlush(managed);
+        copyOutcome(managed, template);
+        return true;
     }
 
     @Override
-    public void markAsFailed(WhatsappTemplate template, String errorMessage, String metaResponse) {
-        template.setStatus(TemplateStatus.FAILED);
-        template.setRejectionReason(errorMessage);
-        template.setMetaResponse(metaResponse);
-        commandRepo.save(template);
+    public boolean markAsFailed(WhatsappTemplate template, String errorMessage, String metaResponse) {
+        Optional<WhatsappTemplate> row = loadIfSubmitted(template.getId(), "failed");
+        if (row.isEmpty()) {
+            return false;
+        }
+        WhatsappTemplate managed = row.get();
+        managed.setStatus(TemplateStatus.FAILED);
+        managed.setRejectionReason(errorMessage);
+        managed.setMetaResponse(metaResponse);
+
+        commandRepo.saveAndFlush(managed);
+        copyOutcome(managed, template);
+        return true;
     }
 
-    @Override
-    public void markAsNewCreated(WhatsappTemplate template, String metaTemplateId, String status,
-            String metaResponse) {
-        template.setMetaTemplateId(metaTemplateId);
-        template.setStatus(TemplateStatus.valueOf(status.toUpperCase()));
-        template.setMetaResponse(metaResponse);
-        commandRepo.save(template);
+    /** Re-reads the row; empty (with a log line) if it is gone or no longer SUBMITTED. */
+    private Optional<WhatsappTemplate> loadIfSubmitted(Long id, String outcome) {
+        Optional<WhatsappTemplate> row = commandRepo.findById(id);
+        if (row.isEmpty()) {
+            log.warn("Cannot record {} outcome: templateId={} not found (deleted?)", outcome, id);
+            return Optional.empty();
+        }
+        if (row.get().getStatus() != TemplateStatus.SUBMITTED) {
+            log.info("Skipping {} outcome for templateId={}: status is already {}",
+                    outcome, id, row.get().getStatus());
+            return Optional.empty();
+        }
+        return row;
+    }
+
+    /** Keeps the caller's (detached) copy in step with what was committed. */
+    private static void copyOutcome(WhatsappTemplate from, WhatsappTemplate to) {
+        if (from == to) {
+            return;
+        }
+        to.setStatus(from.getStatus());
+        to.setMetaTemplateId(from.getMetaTemplateId());
+        to.setMetaStatusRaw(from.getMetaStatusRaw());
+        to.setMetaResponse(from.getMetaResponse());
+        to.setRejectionReason(from.getRejectionReason());
+        to.setCategory(from.getCategory());
+        to.setPreviousCategory(from.getPreviousCategory());
+        to.setUpdatedAt(from.getUpdatedAt());
+    }
+
+    private static TemplateCategory parseCategory(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return TemplateCategory.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Override
@@ -107,7 +186,9 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
 
     @Override
     public void ensureNoDuplicate(String wabaId, String name, String language, Long excludeTemplateId) {
-        if (queryService.existsNonDraft(wabaId, name, language, excludeTemplateId)) {
+        // Only LIVE templates count: a DRAFT or FAILED row with the same name
+        // does not exist on Meta and must not block (re)creating it.
+        if (queryService.existsLive(wabaId, name, language, excludeTemplateId)) {
             throw new DuplicateResourceException(ErrorCode.TEMPLATE_ALREADY_EXISTS, String.format(
                     "Template '%s' (%s) already exists on WABA %s", name, language, wabaId));
         }

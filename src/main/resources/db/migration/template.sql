@@ -39,12 +39,22 @@ CREATE TABLE whatsapp_templates (
   updated_at DATETIME(6) NULL,
   deleted_at DATETIME(6) NULL,
 
-  UNIQUE KEY uk_waba_template (
-    waba_id, name, language
+  -- Computed, never written by the application. 1 = live (exists or may exist
+  -- on Meta), NULL = DRAFT / FAILED / soft-deleted. Must match the
+  -- columnDefinition of WhatsappTemplate.liveFlag.
+  live_flag TINYINT GENERATED ALWAYS AS (
+    CASE WHEN deleted_at IS NULL AND status NOT IN ('DRAFT','FAILED') THEN 1 ELSE NULL END
+  ) STORED,
+
+  -- One LIVE template per (waba, name, language). NULLs never collide, so
+  -- DRAFT / FAILED / deleted rows do not block reusing a name.
+  UNIQUE KEY uk_waba_template_live (
+    waba_id, name, language, live_flag
   ),
 
   INDEX idx_project_status (project_id, status),
-  INDEX idx_waba_id (waba_id)
+  INDEX idx_waba_id (waba_id),
+  INDEX idx_status_updated (status, updated_at)
 ) ENGINE=InnoDB;
 
 

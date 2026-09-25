@@ -1,6 +1,9 @@
 package com.aigreentick.services.template.domain.enums;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Optional;
+import java.util.Set;
 
 public enum TemplateStatus {
     DRAFT,
@@ -21,6 +24,20 @@ public enum TemplateStatus {
      * creation transaction, so it rolled back a template Meta had already created.
      */
     UNKNOWN;
+
+    /**
+     * Statuses of a template that does NOT exist on Meta: never submitted
+     * (DRAFT) or definitively not accepted (FAILED). Every other status is
+     * "live" and holds its (waba, name, language) - see
+     * {@code WhatsappTemplate.liveFlag} / {@code uk_waba_template_live}, whose
+     * SQL expression must list exactly these values.
+     */
+    public static final Set<TemplateStatus> NOT_LIVE =
+            Collections.unmodifiableSet(EnumSet.of(DRAFT, FAILED));
+
+    public boolean isLive() {
+        return !NOT_LIVE.contains(this);
+    }
 
     /** Null-safe, case-insensitive, never throws. */
     public static Optional<TemplateStatus> parse(String raw) {

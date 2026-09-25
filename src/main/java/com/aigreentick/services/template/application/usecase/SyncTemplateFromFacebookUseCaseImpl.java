@@ -169,7 +169,7 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
                     Optional.empty(),
                     Optional.empty(),
                     Optional.empty(),
-                    Optional.of(200),
+                    Optional.empty() /* page size: facebook-service.template-page-size */,
                     afterCursor);
 
             if (!response.isSuccess() || response.getData() == null) {
@@ -238,6 +238,23 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
             }
 
             if (newMetaIds.contains(metaId)) {
+                // A local row that was SUBMITTED but whose Meta outcome was never
+                // recorded has no metaId, so it looks "new" here. Inserting a
+                // second row would violate uk_waba_template_live - adopt the
+                // existing row instead.
+                Optional<WhatsappTemplate> unresolved = queryService.findLiveWithoutMetaId(
+                        wabaId, fbTemplate.getName(), fbTemplate.getLanguage());
+                if (unresolved.isPresent() && projectId.equals(unresolved.get().getProjectId())) {
+                    WhatsappTemplate adopted = unresolved.get();
+                    adopted.setMetaTemplateId(metaId);
+                    applyMetadataUpdate(adopted, fbTemplate);
+                    if (adopted.getStatus() == TemplateStatus.SUBMITTED) {
+                        adopted.setStatus(TemplateStatus.UNKNOWN);
+                    }
+                    toUpdate.add(adopted);
+                    log.info("[SYNC] Adopted unresolved templateId={} as metaId={}", adopted.getId(), metaId);
+                    continue;
+                }
                 toInsert.add(syncMapper.fromFacebookTemplate(
                         fbTemplate, projectId, organizationId, wabaId));
 
@@ -274,10 +291,16 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
     protected TemplateSyncStats persistChanges(
             Long projectId, String wabaId, SyncCategorizationResult categorized) {
 
-        if (!categorized.toInsert().isEmpty()) {
-            commandService.saveAll(categorized.toInsert());
-            log.info("[SYNC] Inserted {} new templates for projectId={}",
-                    categorized.toInsert().size(), projectId);
+        // Order matters for uk_waba_template_live: free names first (stale
+        // rows Meta no longer has), then update, then insert - so a template
+        // deleted and recreated on Meta under the same name does not collide
+        // with its own stale row.
+        int deletedCount = 0;
+        if (!categorized.staleMetaIds().isEmpty()) {
+            deletedCount = commandService.softDeleteStaleByMetaIds(
+                    categorized.staleMetaIds(), projectId);
+            log.info("[SYNC] Soft-deleted {} stale templates for projectId={}",
+                    deletedCount, projectId);
         }
 
         if (!categorized.toUpdate().isEmpty()) {
@@ -286,12 +309,10 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
                     categorized.toUpdate().size(), projectId);
         }
 
-        int deletedCount = 0;
-        if (!categorized.staleMetaIds().isEmpty()) {
-            deletedCount = commandService.softDeleteStaleByMetaIds(
-                    categorized.staleMetaIds(), projectId);
-            log.info("[SYNC] Soft-deleted {} stale templates for projectId={}",
-                    deletedCount, projectId);
+        if (!categorized.toInsert().isEmpty()) {
+            commandService.saveAll(categorized.toInsert());
+            log.info("[SYNC] Inserted {} new templates for projectId={}",
+                    categorized.toInsert().size(), projectId);
         }
 
         log.info("[SYNC] Persist complete — inserted={} updated={} skipped={} deleted={} mediaQueued={}",

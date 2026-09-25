@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import com.aigreentick.services.template.domain.enums.TemplateStatus;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 
 /**
@@ -61,4 +62,29 @@ public interface WhatsappTemplateCommandRepository extends JpaRepository<Whatsap
             @Param("metaIds") Set<String> metaIds,
             @Param("projectId") Long projectId,
             @Param("deletedAt") Instant deletedAt);
+
+    // ── Guarded status transition ──
+
+    /**
+     * Moves a template from {@code from} to {@code to} only if it is still in
+     * {@code from}. Returns the number of rows changed (0 or 1), so two
+     * concurrent submits of the same draft cannot both reach Meta.
+     *
+     * <p>Bulk JPQL updates bypass {@code @PreUpdate}, so {@code updatedAt} is
+     * set here explicitly — the stuck-SUBMITTED reconciler relies on it.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE WhatsappTemplate t
+            SET t.status = :toStatus,
+                t.updatedAt = :now
+            WHERE t.id = :id
+              AND t.status = :fromStatus
+              AND t.deletedAt IS NULL
+            """)
+    int transitionStatus(
+            @Param("id") Long id,
+            @Param("fromStatus") TemplateStatus from,
+            @Param("toStatus") TemplateStatus to,
+            @Param("now") Instant now);
 }

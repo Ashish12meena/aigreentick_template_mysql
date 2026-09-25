@@ -34,4 +34,17 @@ public class IdempotencyProperties {
      */
     @NotNull
     private Duration inProgressTimeout = Duration.ofMinutes(5);
+
+    /**
+     * How often expired keys are purged ({@code IdempotencyStore#purgeExpired}).
+     * Read by {@code @Scheduled} through the placeholder
+     * {@code idempotency.purge-interval}; declared here so it is validated and
+     * documented with the rest.
+     */
+    @NotNull
+    private Duration purgeInterval = Duration.ofHours(1);
+
+    /** Delay after startup before the first purge. */
+    @NotNull
+    private Duration purgeInitialDelay = Duration.ofMinutes(1);
 }

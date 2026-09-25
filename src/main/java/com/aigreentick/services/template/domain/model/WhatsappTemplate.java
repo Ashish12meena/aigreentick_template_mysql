@@ -17,10 +17,19 @@ import java.util.List;
 
 @Entity
 @Table(name = "whatsapp_templates", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_waba_template", columnNames = { "waba_id", "name", "language" })
+        /*
+         * One LIVE template per (waba, name, language). live_flag is 1 only for
+         * rows that exist (or may exist) on Meta and NULL otherwise; MySQL lets
+         * any number of rows share a unique key that contains NULL. So DRAFT,
+         * FAILED and soft-deleted rows never block a name - a failed template
+         * can be fixed and recreated under the same name while its failed row
+         * (and Meta's error in meta_response) stays as history.
+         */
+        @UniqueConstraint(name = "uk_waba_template_live", columnNames = { "waba_id", "name", "language", "live_flag" })
 }, indexes = {
         @Index(name = "idx_project_status", columnList = "project_id, status"),
-        @Index(name = "idx_waba_id", columnList = "waba_id")
+        @Index(name = "idx_waba_id", columnList = "waba_id"),
+        @Index(name = "idx_status_updated", columnList = "status, updated_at")
 })
 @SQLDelete(sql = "UPDATE whatsapp_templates SET deleted_at = UTC_TIMESTAMP(6) WHERE id = ?")
 @SQLRestriction("deleted_at IS NULL")
@@ -91,6 +100,18 @@ public class WhatsappTemplate {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    /**
+     * Computed by MySQL - never written by the application. 1 when the row is
+     * live (not soft-deleted, status not DRAFT/FAILED), otherwise NULL.
+     * Backs {@code uk_waba_template_live}; see the class-level note.
+     *
+     * <p>The expression must stay identical to db/migration/template.sql.
+     */
+    @Column(name = "live_flag", insertable = false, updatable = false,
+            columnDefinition = "TINYINT GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL "
+                    + "AND status NOT IN ('DRAFT','FAILED') THEN 1 ELSE NULL END) STORED")
+    private Byte liveFlag;
 
     @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WhatsappTemplateComponent> components = new ArrayList<>();

@@ -287,7 +287,7 @@ api_idempotency_keys            (standalone; infrastructure.idempotency.Idempote
   DDL is in the reference script.
 - Children are owned via `cascade = ALL, orphanRemoval = true`; replacing a
   draft's components clears and re-adds them.
-- `whatsapp_templates` unique key `uk_waba_template (waba_id, name, language)`.
+- `whatsapp_templates` unique key `uk_waba_template_live (waba_id, name, language, live_flag)` — `live_flag` is a generated column (1 = live, NULL = DRAFT / FAILED / soft-deleted), so only live templates are unique and a failed or deleted name can be reused.
 - Soft delete: `deleted_at` + `@SQLRestriction("deleted_at IS NULL")` +
   `@SQLDelete`. Bulk deletes are JPQL updates that set `deletedAt`.
 - **Time:** every timestamp is `java.time.Instant`, stored as `DATETIME(6)` in

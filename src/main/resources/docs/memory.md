@@ -209,6 +209,31 @@ filters). Contract changes for consumers:
   replace hand-built envelopes.
 - Sync made asynchronous (202) and split into phases so no DB connection is held
   during HTTP calls.
+- **2026-09-25 — create/submit reliability.**
+  - waba-service credentials are read from the API Standard envelope
+    (`WabaApiEnvelope`); previously the token was always `null`.
+  - Entities use `@Getter @Setter @ToString(id only)` instead of `@Data`; the
+    generated `hashCode` recursed Component ↔ Example into a `StackOverflowError`.
+  - Create / submit-draft are no longer one transaction around the Meta call.
+    The row commits as `SUBMITTED` first; Meta is called with no transaction;
+    the outcome is written in its own short transaction. A crash after Meta
+    accepts can no longer roll the row back.
+  - Outcomes: Meta 4xx → `FAILED` (Meta's `error_user_msg` in `rejection_reason`,
+    raw JSON in `meta_response`); timeout / 5xx / save error → stays `SUBMITTED`
+    and `SubmittedTemplateReconciler` looks it up on Meta by name. The logic is
+    in `application/service`; the timer is `infrastructure/scheduling/
+    TemplateReconcileScheduler` (an inbound adapter, like a controller), so
+    `application` gained no `infrastructure` import (K13).
+  - All schedules and tuning values are configuration, not code:
+    `template.reconcile.*`, `idempotency.purge-interval` / `purge-initial-delay`
+    (was a hard-coded `fixedDelay = 3_600_000L`), and
+    `facebook-service.template-page-size` (was `Optional.of(200)` in sync).
+  - Unique key is now `uk_waba_template_live (waba_id, name, language, live_flag)`;
+    `live_flag` is generated (1 = live, NULL = DRAFT / FAILED / deleted). A failed
+    or deleted name can be reused; failed rows stay as history. Migration:
+    `db/migration/2026_09_25_live_unique_key.sql`.
+  - Sync adopts an unresolved `SUBMITTED` row instead of inserting a duplicate,
+    and soft-deletes stale rows before inserting.
 
 ---
 
@@ -219,8 +244,7 @@ filters). Contract changes for consumers:
 | K1 | `@Transactional` on `categorizeTemplates` / `persistChanges` has no effect (protected methods, self-invocation). Sync persistence is not atomic; each `saveAll`/soft-delete commits in `TemplateCommandServiceImpl`'s own transaction. **Accepted as-is (2026-09-23 decision): no change planned;** a later sync reconciles partial writes. | `SyncTemplateFromFacebookUseCaseImpl` |
 | K2 | Meta rule validation runs only on create; update-draft and submit skip `TemplateValidationService`. | `UpdateDraftTemplateUseCaseImpl`, `SubmitDraftToMetaUseCaseImpl` |
 | K6 | On a failed chunk upload the error uses `sessionResponse.getErrorMessage()` instead of the upload response's. | `WhatsappTemplateMediaUseCaseImpl` |
-| K7 | `markAsSucceeded` / `markAsNewCreated` use `TemplateStatus.valueOf`, which throws on an unknown Meta status; `TemplateStatus.parse()` exists but is unused. | `TemplateCommandServiceImpl` |
-| K8 | `metaStatusRaw`, `createdBy`, `qualityRating` are never set (quality stays `UNKNOWN`); `NEW_CREATED` is never assigned. | `WhatsappTemplate` |
+| K8 | `createdBy`, `qualityRating` are never set (quality stays `UNKNOWN`); `NEW_CREATED` is never assigned. (`metaStatusRaw` is now set when Meta accepts.) | `WhatsappTemplate` |
 | K9 | Sync result is only logged; there is no job-status endpoint, so the 202 `statusUrl` points at the template list. (MDC is now propagated; the `jobId` is the request id and tags every sync log line.) | sync |
 | K16 | API Standard says delete of an already-deleted resource is 204; here it is 404 `TEMPLATE_NOT_FOUND`, because the soft-delete use case throws when no row matches. Left as-is to avoid changing use-case behaviour; decide with the frontend. | `TemplateCommandServiceImpl.softDeleteById` |
 | K17 | The list path is `/my-templates`; a standard REST collection read would be `GET /api/v1/templates`. Not required by the API Standard; left unchanged. | `ApiPaths.TEMPLATE_LIST` |
@@ -237,7 +261,6 @@ filters). Contract changes for consumers:
   (the save call in the media use case was removed earlier).
 - `MediaUrlMappingRequestDto`, `MediaLocation` enum.
 - `TemplateAuditEventType` enum.
-- `TemplateCommandService.markAsSucceeded`.
 - Unused import `ComponentFormat` in `WhatsappTemplateMapper`.
 
 ## Gotchas
@@ -247,5 +270,13 @@ filters). Contract changes for consumers:
 - `DELETE ...?deleteFromMeta=true` deletes on Meta by **name** (all languages).
 - Sync never touches `DRAFT` templates; soft-deletes non-draft templates missing on Meta.
 - `ddl-auto: update` does not change existing column types; reset dev DBs after type changes.
+- `ddl-auto: update` adds `live_flag` and `uk_waba_template_live` but does **not**
+  drop the old `uk_waba_template`; run `2026_09_25_live_unique_key.sql` on every
+  existing database, or failed names stay blocked.
+- `@Scheduled` values must be property placeholders
+  (`fixedDelayString = "${...}"`), never literals; declare the same key on the
+  matching `*Properties` class so it is validated and documented.
+- `live_flag`'s SQL expression must list exactly `TemplateStatus.NOT_LIVE`
+  (DRAFT, FAILED). Change both together, in the entity and in `template.sql`.
 - No `pom.xml` was in the source archive received on 2026-09-23; the team's pom
   is Boot 3.5.6 / Java 21 / Spring Cloud 2025.0.0 / springdoc 2.8.13.

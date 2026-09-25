@@ -10,6 +10,13 @@ public class FacebookApiResponse<T> {
     private String errorMessage;
     private int statusCode;
 
+    /**
+     * {@link #statusCode} value meaning Meta sent no HTTP response at all
+     * (timeout, connection reset). The request may or may not have been
+     * processed by Meta.
+     */
+    public static final int NO_RESPONSE = 0;
+
     private FacebookApiResponse() {
         // prevent accidental raw instantiation
     }
@@ -20,6 +27,11 @@ public class FacebookApiResponse<T> {
         response.data = data;
         response.statusCode = statusCode;
         return response;
+    }
+
+    /** True when Meta answered with a 4xx: a definitive rejection of the request. */
+    public boolean isClientError() {
+        return !success && statusCode >= 400 && statusCode < 500;
     }
 
     public static <T> FacebookApiResponse<T> error(String errorMessage, int statusCode) {

@@ -6,7 +6,7 @@
 --   MARKETING (previously UTILITY), en, single BODY component,
 --   two variables: {{1}} = name, {{2}} = company.
 --
--- Names must be unique on (waba_id, name, language) -- uk_waba_template --
+-- Live names must be unique on (waba_id, name, language) -- uk_waba_template_live --
 -- and all four projects share one WABA, so each gets its own name:
 --   project   1 -> welcome_note_alpha
 --   project   2 -> welcome_note_bravo

@@ -13,7 +13,7 @@
 -- previous_category is NULL: it is not in the payload, and is only set by
 -- the service when Meta re-categorises a template.
 --
--- Names must be unique on (waba_id, name, language) -- uk_waba_template --
+-- Live names must be unique on (waba_id, name, language) -- uk_waba_template_live --
 -- and all four share one WABA, so each project gets its own name:
 --   project   1 -> welcome_note_alpha
 --   project   2 -> welcome_note_bravo

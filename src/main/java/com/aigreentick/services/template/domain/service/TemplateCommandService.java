@@ -15,19 +15,40 @@ public interface TemplateCommandService {
     List<WhatsappTemplate> saveAll(List<WhatsappTemplate> templates);
 
     // ── Status transitions ──
-
-    void markAsSubmitted(WhatsappTemplate template);
-
-    void markAsSucceeded(WhatsappTemplate template, String metaTemplateId, String status, String metaResponse);
-
-    void markAsFailed(WhatsappTemplate template, String errorMessage, String metaResponse);
-
-    void markAsNewCreated(WhatsappTemplate template, String metaTemplateId, String status, String metaResponse);
+    //
+    // Each runs in its own short transaction and re-reads the row, so they are
+    // safe to call from code that holds no transaction (the Meta submission
+    // flow deliberately holds none while it waits on Meta).
 
     /**
-     * Flushes pending changes so {@code @PreUpdate} has run and the entity's
-     * {@code updatedAt} reflects this write before it is returned to the caller.
+     * DRAFT -> SUBMITTED, only if the row is still a DRAFT. Throws
+     * {@code InvalidTemplateStateException} otherwise (e.g. a concurrent
+     * submit already moved it). Can raise a unique-key violation if another
+     * live template already uses the name.
      */
+    void markAsSubmitted(WhatsappTemplate template);
+
+    /**
+     * SUBMITTED -> Meta's status (PENDING / APPROVED / ...). Never throws on
+     * an unrecognised Meta status or category: an unknown status is stored as
+     * UNKNOWN with the raw value in metaStatusRaw. The passed entity is
+     * updated to match. Returns false (and changes nothing) if the row is no
+     * longer SUBMITTED.
+     *
+     * @param metaResponse valid JSON or null (the column is JSON)
+     */
+    boolean markAsAcceptedByMeta(WhatsappTemplate template, String metaTemplateId,
+            String metaStatus, String metaCategory, String metaResponse);
+
+    /**
+     * SUBMITTED -> FAILED. FAILED is not live, so the name becomes reusable
+     * while this row (with Meta's error) stays as history. Returns false if
+     * the row is no longer SUBMITTED.
+     *
+     * @param metaResponse valid JSON or null (the column is JSON)
+     */
+    boolean markAsFailed(WhatsappTemplate template, String errorMessage, String metaResponse);
+
     void flush();
 
     // ── Deletes ──

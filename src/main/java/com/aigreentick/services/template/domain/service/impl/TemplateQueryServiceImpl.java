@@ -1,6 +1,8 @@
 package com.aigreentick.services.template.domain.service.impl;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.data.domain.Page;
@@ -76,9 +78,22 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     }
 
     @Override
-    public boolean existsNonDraft(String wabaId, String name, String language, Long excludeTemplateId) {
-        return queryRepo.existsDuplicate(
-                wabaId, name, language, TemplateStatus.DRAFT, excludeTemplateId);
+    public boolean existsLive(String wabaId, String name, String language, Long excludeTemplateId) {
+        return queryRepo.existsLiveDuplicate(
+                wabaId, name, language, TemplateStatus.NOT_LIVE, excludeTemplateId);
+    }
+
+    @Override
+    public List<WhatsappTemplate> findStuckSubmitted(Instant cutoff, int limit) {
+        return queryRepo.findSubmittedUpdatedBefore(cutoff, PageRequest.of(0, limit));
+    }
+
+    @Override
+    public Optional<WhatsappTemplate> findLiveWithoutMetaId(String wabaId, String name, String language) {
+        List<WhatsappTemplate> rows = queryRepo.findLiveWithoutMetaId(
+                wabaId, name, language, TemplateStatus.NOT_LIVE);
+        // uk_waba_template_live allows at most one live row per name.
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
     @Override
