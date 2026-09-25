@@ -2,8 +2,9 @@ package com.aigreentick.services.template.domain.model;
 
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import java.time.Instant;
 import java.util.List;
 
@@ -12,8 +13,12 @@ import com.aigreentick.services.template.domain.enums.CardComponentType;
 
 @Entity
 @Table(name = "whatsapp_template_carousel_card_components")
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateCarouselCardComponent {
+    
+    @ToString.Include
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

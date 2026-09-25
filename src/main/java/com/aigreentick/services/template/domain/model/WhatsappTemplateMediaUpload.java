@@ -2,8 +2,9 @@ package com.aigreentick.services.template.domain.model;
 
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import java.time.Instant;
 
 import com.aigreentick.services.template.domain.enums.MediaType;
@@ -15,8 +16,12 @@ import com.aigreentick.services.template.domain.enums.UploadStatus;
            @Index(name = "idx_session", columnList = "session_id"),
            @Index(name = "idx_project", columnList = "project_id")
        })
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateMediaUpload {
+    
+    @ToString.Include
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

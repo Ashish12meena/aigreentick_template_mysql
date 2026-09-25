@@ -1,7 +1,9 @@
 package com.aigreentick.services.template.domain.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.Instant;
@@ -9,8 +11,12 @@ import java.util.List;
 
 @Entity
 @Table(name = "whatsapp_template_examples")
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateExample {
+    
+    @ToString.Include
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

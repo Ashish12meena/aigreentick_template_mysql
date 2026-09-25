@@ -1,8 +1,9 @@
 package com.aigreentick.services.template.domain.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import java.time.Instant;
 import java.util.List;
 
@@ -16,9 +17,12 @@ import com.aigreentick.services.template.domain.enums.OtpType;
 @Table(name = "whatsapp_template_buttons", uniqueConstraints = {
         @UniqueConstraint(name = "uk_component_button", columnNames = { "component_id", "button_index" })
 })
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateButton {
 
+    @ToString.Include
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

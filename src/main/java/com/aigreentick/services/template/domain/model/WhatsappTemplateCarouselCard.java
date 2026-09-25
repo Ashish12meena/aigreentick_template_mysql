@@ -2,8 +2,9 @@ package com.aigreentick.services.template.domain.model;
 
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import java.time.Instant;
 import java.util.List;
 
@@ -13,8 +14,12 @@ import java.util.List;
            @UniqueConstraint(name = "uk_component_card",
                            columnNames = {"component_id", "card_index"})
        })
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateCarouselCard {
+    
+    @ToString.Include
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

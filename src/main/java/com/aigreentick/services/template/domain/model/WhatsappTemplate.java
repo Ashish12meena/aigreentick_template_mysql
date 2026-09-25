@@ -1,7 +1,9 @@
 package com.aigreentick.services.template.domain.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
@@ -22,9 +24,12 @@ import java.util.List;
 })
 @SQLDelete(sql = "UPDATE whatsapp_templates SET deleted_at = UTC_TIMESTAMP(6) WHERE id = ?")
 @SQLRestriction("deleted_at IS NULL")
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplate {
 
+    @ToString.Include
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

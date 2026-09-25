@@ -1,8 +1,9 @@
 package com.aigreentick.services.template.domain.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import java.time.Instant;
 
 import com.aigreentick.services.template.domain.enums.CarouselButtonType;
@@ -13,8 +14,12 @@ import com.aigreentick.services.template.domain.enums.CarouselButtonType;
            @UniqueConstraint(name = "uk_card_button",
                            columnNames = {"card_component_id", "button_index"})
        })
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 public class WhatsappTemplateCarouselButton {
+    
+    @ToString.Include
     
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
