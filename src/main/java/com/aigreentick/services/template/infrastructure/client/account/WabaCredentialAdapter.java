@@ -10,6 +10,7 @@ import com.aigreentick.services.template.infrastructure.config.WebClientConfig;
 import com.aigreentick.services.template.infrastructure.config.properties.WabaServiceProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -46,6 +47,9 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 @Slf4j
 @Component
 public class WabaCredentialAdapter implements WabaCredentialPort {
+
+    private static final ParameterizedTypeReference<WabaApiEnvelope<WabaCredentialsResponse>> ENVELOPE_TYPE =
+            new ParameterizedTypeReference<>() {};
 
     private final WebClient webClient;
     private final WabaServiceProperties properties;
@@ -85,7 +89,7 @@ public class WabaCredentialAdapter implements WabaCredentialPort {
                 wabaId, tenant.organizationId(), tenant.projectId());
 
         try {
-            WabaCredentialsResponse response = webClient.get()
+            WabaApiEnvelope<WabaCredentialsResponse> envelope = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path(properties.path(WabaServiceProperties.CREDENTIALS_BY_WABA))
                             .build(wabaId))
@@ -98,8 +102,18 @@ public class WabaCredentialAdapter implements WabaCredentialPort {
                             .map(body -> new WhatsappCredentialsNotFoundException(
                                     "waba-service returned " + clientResponse.statusCode().value()
                                             + " for wabaId=" + wabaId + ": " + body)))
-                    .bodyToMono(WabaCredentialsResponse.class)
+                    .bodyToMono(ENVELOPE_TYPE)
                     .block();
+
+            // waba-service wraps the payload in the API Standard envelope;
+            // the credential itself lives under "data".
+            if (envelope == null || !envelope.succeeded()) {
+                throw new WhatsappCredentialsNotFoundException(
+                        "waba-service returned an unsuccessful envelope for wabaId=" + wabaId
+                                + (envelope == null ? " (empty body)"
+                                        : " code=" + envelope.getCode() + " message=" + envelope.getMessage()));
+            }
+            WabaCredentialsResponse response = envelope.getData();
 
             if (response == null || response.getAccessToken() == null || response.getAccessToken().isBlank()) {
                 throw new WhatsappCredentialsNotFoundException(

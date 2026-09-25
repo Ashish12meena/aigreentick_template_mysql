@@ -189,7 +189,7 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.aigreentick.services.template: ${LOG_LEVEL:INFO}
+    com.aigreentick.services.template: ${LOG_LEVEL:DEBUG}
   # requestId/orgId/projectId/userId come from RequestIdFilter via MDC. The keys are declared
   # once in LogKeys; a rename there without a matching edit here prints blank
   # fields rather than failing, which is why they are constants in Java.
