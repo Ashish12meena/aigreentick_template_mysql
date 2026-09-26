@@ -72,7 +72,9 @@ Root package: `com.aigreentick.services.template`
 ```
 api/                 HTTP boundary
   v1/                  TemplateController           (/api/v1/templates)
+                       TemplateLibraryController    (/api/v1/template-library, read-only)
   internal/v1/         InternalTemplateController   (/internal/v1/templates)
+                       InternalTemplateLibraryController (/internal/v1/template-library, create/update)
   advice/              GlobalExceptionHandler, ApiErrorController (/error)
   request/ response/   DTOs (response/common: ApiEnvelope, PageResponse, Pagination, Responses; response/media/*)
   validation/          @OneOf constraint
@@ -86,7 +88,7 @@ application/         Use cases and orchestration
   mapper/              request/Meta payload -> entity, entity -> result
   dto/                 command/, result/, client/, TenantScope, ...
 domain/              Persistence model
-  model/               11 JPA entities
+  model/               12 JPA entities (incl. SystemTemplate)
   enums/               TemplateStatus, TemplateCategory, ComponentType, ...
   repository/          Query (reads) and Command (writes) repositories split
   service/             TemplateQueryService / TemplateCommandService (+ impl/)
@@ -140,6 +142,10 @@ Public base: `/api/v1/templates`. All routes are constants in `ApiPaths`.
 | POST | `/api/v1/templates/media` (multipart `file`) | Org, Project, Waba, App | 200 | `WhatsappTemplateMediaUseCase` |
 | GET | `/internal/v1/templates/{templateId}` | Org, Project, `X-Internal-Api-Key` | 200 | same as public getById |
 | GET | `/internal/v1/templates/lookup` | Org, Project, Waba, `X-Internal-Api-Key` | 200 | same as public lookup |
+| GET | `/api/v1/template-library?page&size&sort&order&category&language&search` | Org, Project (not used as a filter) | 200 `{items, pagination}` | `GetSystemTemplateUseCase.list` |
+| GET | `/api/v1/template-library/{systemTemplateId}` | Org, Project (not used as a filter) | 200 | `GetSystemTemplateUseCase.getById` |
+| POST | `/internal/v1/template-library` | Org, Project, Idempotency-Key, `X-Internal-Api-Key` | 201 + `Location` | `CreateSystemTemplateUseCase` |
+| PUT | `/internal/v1/template-library/{systemTemplateId}` | Org, Project, `X-Internal-Api-Key` | 200 | `UpdateSystemTemplateUseCase` |
 
 Headers (`ApiHeaders`, API Standard §1): `X-Org-Id`, `X-Project-Id` (positive
 longs, required); `X-User-Id` (optional); `X-Request-Id` (optional, validated
@@ -281,8 +287,21 @@ whatsapp_templates (root, soft-deleted)
  └─ whatsapp_template_variables
 whatsapp_template_media_uploads (standalone; currently unused — see memory.md)
 api_idempotency_keys            (standalone; infrastructure.idempotency.IdempotencyRecord)
+system_templates                (standalone; Template Library, not tenant-scoped)
 ```
 
+- `system_templates` (Template Library): one row per library template.
+  `payload` (JSON) is the create-request shape `{template, variables}` in
+  camelCase, written with `JsonHelper.serialize` and read with
+  `JsonHelper.deserialize` into `SystemTemplatePayload` (never the snake_case
+  Meta helpers). `name`, `language`, `category` are copied from
+  `payload.template` by `SystemTemplateMapper.apply` for listing, filtering and
+  `uk_system_template_name_lang (name, language)`. No soft delete: `is_active`
+  hides an entry. No tenant columns; reads are not scoped by project.
+  `sample_media_url` is a preview-only URL on our storage for media-header
+  entries; the Meta handle in the payload is only a validation sample, and
+  users supply their own media (and handle) when they create from an entry.
+  Create by hand in prod: `db/migration/2026_09_26_template_library.sql`.
 - `api_idempotency_keys` must be created by hand in prod (`ddl-auto: validate`);
   DDL is in the reference script.
 - Children are owned via `cascade = ALL, orphanRemoval = true`; replacing a

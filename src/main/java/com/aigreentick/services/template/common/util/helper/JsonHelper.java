@@ -1,6 +1,7 @@
 package com.aigreentick.services.template.common.util.helper;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import lombok.extern.slf4j.Slf4j;
@@ -11,8 +12,11 @@ public final class JsonHelper {
     private JsonHelper() {
     }
 
+    // Lenient on read, like the API's own mapper: a stored document that still
+    // carries a field later removed from its DTO must keep loading.
     private static final ObjectMapper DEFAULT_MAPPER = new ObjectMapper()
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final ObjectMapper SNAKE_CASE_MAPPER = new ObjectMapper()
             .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
@@ -34,6 +38,16 @@ public final class JsonHelper {
         } catch (Exception e) {
             log.error("Failed to serialize object with snake_case", e);
             throw new IllegalStateException("JSON serialization failed", e);
+        }
+    }
+
+    /** Reads camelCase JSON written by {@link #serialize(Object)}. */
+    public static <T> T deserialize(String json, Class<T> type) {
+        try {
+            return DEFAULT_MAPPER.readValue(json, type);
+        } catch (Exception e) {
+            log.error("Failed to deserialize JSON into {}", type.getName(), e);
+            throw new IllegalStateException("JSON deserialization failed", e);
         }
     }
 }

@@ -138,7 +138,7 @@ media-sync:
 # (timeout, Meta 5xx, crash after Meta accepted). See SubmittedTemplateReconciler.
 template:
   reconcile:
-    enabled: ${TEMPLATE_RECONCILE_ENABLED:true}
+    enabled: ${TEMPLATE_RECONCILE_ENABLED:false}
     interval: ${TEMPLATE_RECONCILE_INTERVAL:PT5M}
     initial-delay: ${TEMPLATE_RECONCILE_INITIAL_DELAY:PT2M}
     min-age: ${TEMPLATE_RECONCILE_MIN_AGE:PT5M}

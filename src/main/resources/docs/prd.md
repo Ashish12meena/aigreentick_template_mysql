@@ -23,7 +23,8 @@ templates available to the Messaging Service for sending.
 
 ## 3. Scope
 
-**In scope:** template CRUD for a project and WABA; draft workflow; local
+**In scope:** template CRUD for a project and WABA; a system-wide Template
+Library of predefined templates; draft workflow; local
 validation of Meta rules; submission to Meta; pull-sync from Meta including
 re-hosting header media; header-media upload to Meta; read APIs for other
 services.
@@ -179,6 +180,39 @@ Collected in one response with `field`, `code` (`META_*`), `message`:
   in AUTHENTICATION; commerce buttons not in UTILITY; LIMITED_TIME_OFFER only
   in MARKETING.
 
+### FR-11 Template Library — browse — `GET /api/v1/template-library`, `GET /api/v1/template-library/{systemTemplateId}`
+- The Template Library holds predefined, system-level templates (not owned
+  by any organization or project) that users can start from.
+- List: active entries only; filters `category`, `language`, `search`
+  (name or description); paging and sorting as FR-4 (`sort` ∈ `createdAt`,
+  `updatedAt`, `name`, `category`, `language`). Each item: `id`, `name`,
+  `language`, `category`, `description`, `sampleMediaUrl`, `createdAt`,
+  `updatedAt`.
+- Detail: `id`, `description`, `sampleMediaUrl`, `active`, `template`,
+  `variables`, `createdAt`, `updatedAt`.
+- `sampleMediaUrl` is a public URL on our own storage used only to preview a
+  media-header template in the library UI. It is not a Meta handle and is
+  never sent to Meta. `template` and `variables` have **the same shape
+  as the FR-1 create request**. Missing or inactive → 404
+  `SYSTEM_TEMPLATE_NOT_FOUND`.
+- `X-Org-Id` / `X-Project-Id` are required but do not filter the library.
+- **Using a library template:** the client pre-fills its create form from
+  `template` + `variables`, lets the user change the name and values, and
+  calls FR-1. There is no separate "use" endpoint, so validation, duplicate
+  checks, drafts and Meta submission are unchanged. A media header still
+  needs the user's own upload (FR-9): Meta media handles are app-specific.
+
+### FR-12 Template Library — maintain — `POST` / `PUT /internal/v1/template-library[/{systemTemplateId}]`
+- Internal only (`X-Internal-Api-Key`); never exposed through the gateway.
+- Body: `description`, optional `sampleMediaUrl` (http(s), ≤ 500 chars;
+  upload the sample file to storage-service first), `template`, `variables`
+  (FR-1 shapes) and `active` (default `true`). Validated with FR-10 rules; name + language must be
+  unique in the library (409 `SYSTEM_TEMPLATE_ALREADY_EXISTS`).
+- Create requires `X-Idempotency-Key`; returns 201 with `Location` at the
+  public read path. Update is a full replace (also of `active`) and returns 200.
+- Entries are never deleted; `active: false` hides one. Templates users
+  already created from an entry are independent and never change.
+
 ## 6. Business rules
 
 - BR-1 Tenancy: a caller can read and change only templates of the project
@@ -191,6 +225,8 @@ Collected in one response with `field`, `code` (`META_*`), `message`:
   `success: true`) whose `data` carries `status: FAILED` and `errorMessage`;
   it is never an error response.
 - BR-6 All timestamps are UTC instants (ISO-8601 with `Z`).
+- BR-7 Template Library entries are global (no tenant) and read-only for
+  users; a user's template made from one is a copy, not a reference.
 
 ## 7. API conventions
 
@@ -210,7 +246,8 @@ response wrapper, status codes, pagination, error format).
   `CONFLICT`, `VALIDATION_FAILED`, `INTERNAL_ERROR`, `DEPENDENCY_FAILURE`,
   `TIMEOUT`, `METHOD_NOT_ALLOWED`, `PAYLOAD_TOO_LARGE`,
   `UNSUPPORTED_MEDIA_TYPE`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_ALREADY_EXISTS`,
-  `TEMPLATE_INVALID_STATE`, `WABA_CREDENTIALS_UNAVAILABLE`,
+  `TEMPLATE_INVALID_STATE`, `SYSTEM_TEMPLATE_NOT_FOUND`,
+  `SYSTEM_TEMPLATE_ALREADY_EXISTS`, `WABA_CREDENTIALS_UNAVAILABLE`,
   `MEDIA_UPLOAD_FAILED`, `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_IN_PROGRESS`,
   `IDEMPOTENCY_KEY_REUSED` (the idempotency codes are shared with storage-service).
 - Field codes in `errors[].code`: the standard's `REQUIRED`, `INVALID_FORMAT`,

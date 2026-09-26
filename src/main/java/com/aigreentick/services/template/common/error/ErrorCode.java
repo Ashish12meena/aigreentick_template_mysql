@@ -56,6 +56,10 @@ public enum ErrorCode {
     TEMPLATE_ALREADY_EXISTS(HttpStatus.CONFLICT),
     /** The template's current status does not allow this operation (e.g. not a draft). */
     TEMPLATE_INVALID_STATE(HttpStatus.CONFLICT),
+    /** The library template does not exist (or is inactive, for public reads). */
+    SYSTEM_TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND),
+    /** A library template with the same name and language already exists. */
+    SYSTEM_TEMPLATE_ALREADY_EXISTS(HttpStatus.CONFLICT),
     /** waba-service could not supply a usable Meta access token. */
     WABA_CREDENTIALS_UNAVAILABLE(HttpStatus.BAD_GATEWAY),
     /** Meta or storage-service failed the media upload. */

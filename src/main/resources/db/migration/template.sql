@@ -320,6 +320,32 @@ CREATE TABLE whatsapp_template_media_uploads (
 
 ) ENGINE=InnoDB;
 
+-- TEMPLATE LIBRARY
+-- 11. system_templates
+-- System-level templates, not owned by any org / project. payload holds the
+-- create-request shape {template, variables} in camelCase; name / language /
+-- category are copies of payload.template.* for listing and filtering.
+-- Entity: domain.model.SystemTemplate.
+CREATE TABLE system_templates (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+  name        VARCHAR(150) NOT NULL,
+  language    VARCHAR(10)  NOT NULL,
+  category    ENUM('MARKETING','UTILITY','AUTHENTICATION') NOT NULL,
+  description VARCHAR(500) NULL,
+  sample_media_url VARCHAR(500) NULL,  -- preview only (our storage), never sent to Meta
+
+  payload JSON NOT NULL,
+
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NULL,
+
+  UNIQUE KEY uk_system_template_name_lang (name, language),
+  INDEX idx_system_template_category (is_active, category)
+) ENGINE=InnoDB;
+
 -- API INFRASTRUCTURE
 -- 10. api_idempotency_keys
 -- X-Idempotency-Key handling for create/send endpoints (API Standard §1).

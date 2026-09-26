@@ -59,6 +59,10 @@ public final class TemplateConstants {
         public static final String TEMPLATES_DELETED = "Templates deleted successfully";
         public static final String MEDIA_UPLOADED = "Media uploaded successfully";
         public static final String SYNC_ACCEPTED = "Template sync started in the background";
+        public static final String SYSTEM_TEMPLATE_FETCHED = "Library template fetched successfully";
+        public static final String SYSTEM_TEMPLATES_FETCHED = "Library templates fetched successfully";
+        public static final String SYSTEM_TEMPLATE_CREATED = "Library template created successfully";
+        public static final String SYSTEM_TEMPLATE_UPDATED = "Library template updated successfully";
 
         /**
          * The template was saved (it has an id) but Meta did not accept it.

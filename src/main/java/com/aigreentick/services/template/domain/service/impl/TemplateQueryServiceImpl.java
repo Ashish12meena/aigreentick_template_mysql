@@ -16,7 +16,9 @@ import com.aigreentick.services.template.common.exception.InvalidTemplateStateEx
 import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
+import com.aigreentick.services.template.domain.model.SystemTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
+import com.aigreentick.services.template.domain.repository.SystemTemplateQueryRepository;
 import com.aigreentick.services.template.domain.repository.WhatsappTemplateQueryRepository;
 import com.aigreentick.services.template.domain.service.TemplateQueryService;
 
@@ -28,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 public class TemplateQueryServiceImpl implements TemplateQueryService {
 
     private final WhatsappTemplateQueryRepository queryRepo;
+    private final SystemTemplateQueryRepository systemTemplateQueryRepo;
 
     @Override
     public WhatsappTemplate getByIdAndProject(Long id, Long projectId) {
@@ -62,13 +65,8 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
             Long projectId, TemplateStatus status, TemplateCategory category,
             String search, int page, int size, String sortBy, String sortDir) {
 
-        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
-        // "id" as a tie-breaker gives a stable total order, so rows sharing a
-        // sort value (e.g. the same createdAt) never repeat or vanish between pages.
-        Sort sort = Sort.by(direction, sortBy).and(Sort.by(direction, "id"));
-
         return queryRepo.findAllByFilters(
-                projectId, status, category, search, PageRequest.of(page, size, sort));
+                projectId, status, category, search, PageRequest.of(page, size, stableSort(sortBy, sortDir)));
     }
 
     @Override
@@ -111,5 +109,43 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     @Override
     public long countActiveByProject(Long projectId) {
         return queryRepo.countByProjectIdAndDeletedAtIsNull(projectId);
+    }
+
+    // ── Template Library ──
+
+    @Override
+    public SystemTemplate getActiveSystemTemplate(Long id) {
+        return systemTemplateQueryRepo.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.SYSTEM_TEMPLATE_NOT_FOUND, "Library template", "id", id));
+    }
+
+    @Override
+    public SystemTemplate getSystemTemplate(Long id) {
+        return systemTemplateQueryRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.SYSTEM_TEMPLATE_NOT_FOUND, "Library template", "id", id));
+    }
+
+    @Override
+    public Page<SystemTemplate> listActiveSystemTemplates(
+            TemplateCategory category, String language, String search,
+            int page, int size, String sortBy, String sortDir) {
+        return systemTemplateQueryRepo.findActiveByFilters(
+                category, language, search, PageRequest.of(page, size, stableSort(sortBy, sortDir)));
+    }
+
+    @Override
+    public boolean existsSystemTemplate(String name, String language, Long excludeId) {
+        return systemTemplateQueryRepo.existsByNameAndLanguageExcluding(name, language, excludeId);
+    }
+
+    /**
+     * "id" as a tie-breaker gives a stable total order, so rows sharing a sort
+     * value (e.g. the same createdAt) never repeat or vanish between pages.
+     */
+    private static Sort stableSort(String sortBy, String sortDir) {
+        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+        return Sort.by(direction, sortBy).and(Sort.by(direction, "id"));
     }
 }

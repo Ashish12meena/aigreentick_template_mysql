@@ -14,7 +14,9 @@ import com.aigreentick.services.template.common.exception.InvalidTemplateStateEx
 import com.aigreentick.services.template.common.exception.ResourceNotFoundException;
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
+import com.aigreentick.services.template.domain.model.SystemTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
+import com.aigreentick.services.template.domain.repository.SystemTemplateCommandRepository;
 import com.aigreentick.services.template.domain.repository.WhatsappTemplateCommandRepository;
 import com.aigreentick.services.template.domain.service.TemplateCommandService;
 import com.aigreentick.services.template.domain.service.TemplateQueryService;
@@ -29,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 public class TemplateCommandServiceImpl implements TemplateCommandService {
 
     private final WhatsappTemplateCommandRepository commandRepo;
+    private final SystemTemplateCommandRepository systemTemplateCommandRepo;
     private final TemplateQueryService queryService;
 
     @Override
@@ -191,6 +194,21 @@ public class TemplateCommandServiceImpl implements TemplateCommandService {
         if (queryService.existsLive(wabaId, name, language, excludeTemplateId)) {
             throw new DuplicateResourceException(ErrorCode.TEMPLATE_ALREADY_EXISTS, String.format(
                     "Template '%s' (%s) already exists on WABA %s", name, language, wabaId));
+        }
+    }
+
+    // ── Template Library ──
+
+    @Override
+    public SystemTemplate saveSystemTemplate(SystemTemplate systemTemplate) {
+        return systemTemplateCommandRepo.save(systemTemplate);
+    }
+
+    @Override
+    public void ensureNoDuplicateSystemTemplate(String name, String language, Long excludeId) {
+        if (queryService.existsSystemTemplate(name, language, excludeId)) {
+            throw new DuplicateResourceException(ErrorCode.SYSTEM_TEMPLATE_ALREADY_EXISTS, String.format(
+                    "Library template '%s' (%s) already exists", name, language));
         }
     }
 }

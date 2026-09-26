@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 
 import com.aigreentick.services.template.domain.enums.TemplateCategory;
 import com.aigreentick.services.template.domain.enums.TemplateStatus;
+import com.aigreentick.services.template.domain.model.SystemTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 
 /**
@@ -42,4 +43,18 @@ public interface TemplateQueryService {
     long countActiveByProject(Long projectId);
 
     WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId);
+
+    // ── Template Library (system templates, not project-scoped) ──
+
+    /** An active library template; 404 {@code SYSTEM_TEMPLATE_NOT_FOUND} if missing or inactive. */
+    SystemTemplate getActiveSystemTemplate(Long id);
+
+    /** A library template in any state (maintenance path); 404 if missing. */
+    SystemTemplate getSystemTemplate(Long id);
+
+    Page<SystemTemplate> listActiveSystemTemplates(
+            TemplateCategory category, String language, String search,
+            int page, int size, String sortBy, String sortDir);
+
+    boolean existsSystemTemplate(String name, String language, Long excludeId);
 }

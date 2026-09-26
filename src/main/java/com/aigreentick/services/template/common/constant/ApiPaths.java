@@ -57,10 +57,19 @@ public final class ApiPaths {
     /** Resumable header-media upload to Meta. */
     public static final String TEMPLATE_MEDIA = "/media";
 
+    /** Template Library: system-level templates shared by every organization. */
+    public static final String TEMPLATE_LIBRARY = API_V1 + "/template-library";
+
+    /** Single library template by id, relative to {@link #TEMPLATE_LIBRARY} / {@link #INTERNAL_TEMPLATE_LIBRARY}. */
+    public static final String SYSTEM_TEMPLATE_BY_ID = "/{systemTemplateId}";
+
     // -- Internal resources -------------------------------------------
 
     /** Service-to-service template reads. */
     public static final String INTERNAL_TEMPLATES = INTERNAL_V1 + "/templates";
+
+    /** Template Library maintenance (create / update). Never exposed through the gateway. */
+    public static final String INTERNAL_TEMPLATE_LIBRARY = INTERNAL_V1 + "/template-library";
 
     private ApiPaths() {
     }
@@ -68,5 +77,10 @@ public final class ApiPaths {
     /** {@code Location} value for a created template: a path, so no internal host name leaks through a gateway. */
     public static String templateLocation(Long templateId) {
         return TEMPLATES + "/" + templateId;
+    }
+
+    /** {@code Location} value for a created library template: its public read path. */
+    public static String systemTemplateLocation(Long systemTemplateId) {
+        return TEMPLATE_LIBRARY + "/" + systemTemplateId;
     }
 }

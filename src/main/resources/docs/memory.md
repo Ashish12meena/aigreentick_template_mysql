@@ -28,6 +28,49 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
 
 ## Change log
 
+### 2026-09-26 — Template Library (system templates)
+Why: give users predefined, easy-to-approve templates (Marketing / Utility /
+Authentication) to start from, independent of any organization or project.
+- **Design (agreed):** one table `system_templates`; the whole template is one
+  JSON `payload` in the **create-request shape** `{template, variables}`
+  (camelCase). Only `name`, `language`, `category` (copied from the payload),
+  `description`, `is_active` and timestamps are columns. No component tables,
+  no tenant columns, no provenance on `whatsapp_templates`.
+- **No "use" endpoint:** `GET /api/v1/template-library/{id}` returns
+  `template` + `variables` in the create-request shape; the frontend pre-fills
+  its form and calls the existing `POST /api/v1/templates`. Create flow,
+  validation, duplicate check and Meta submission are unchanged.
+- **API:** public read-only `GET /api/v1/template-library` (list, filters
+  `category`, `language`, `search`) and `GET /api/v1/template-library/{systemTemplateId}`;
+  maintenance under `/internal/v1/template-library` (`POST` @Idempotent,
+  `PUT` full replace incl. `active`). Writes are internal because the public
+  API has no roles and trusts gateway headers.
+- **Code:** entity `SystemTemplate`; `SystemTemplateQueryRepository` /
+  `SystemTemplateCommandRepository`; library methods on `TemplateQueryService`
+  / `TemplateCommandService` (rules.md §3.3); ports `GetSystemTemplateUseCase`,
+  `CreateSystemTemplateUseCase`, `UpdateSystemTemplateUseCase`;
+  `SystemTemplateMapper` (application), `SystemTemplateApiMapper` (api);
+  `SystemTemplatePayload` (stored document); `JsonHelper.deserialize` added
+  (DEFAULT_MAPPER now ignores unknown properties on read).
+  `TemplateQueryServiceImpl` sort building moved to a shared `stableSort` helper
+  (same behaviour for the template list).
+- **Errors:** `SYSTEM_TEMPLATE_NOT_FOUND` (404; also for inactive entries on
+  public reads), `SYSTEM_TEMPLATE_ALREADY_EXISTS` (409).
+- **Schema:** `db/migration/2026_09_26_template_library.sql` — **run by hand in
+  prod** (`ddl-auto: validate`); also added to `template.sql` and
+  `template_reset.sql`.
+- Library entries are validated with `TemplateValidationService` on create and
+  update, so a broken entry fails for the maintainer, not for every user.
+- Media headers: a library template cannot carry a usable Meta handle (handles
+  are app-specific); the user uploads their own via `/api/v1/templates/media`.
+- **`sample_media_url`** (same day): preview image/video/document URL for the
+  library UI, stored on our storage. A Meta handle cannot be displayed and is
+  app-specific, so it is unsuitable for preview. Kept as a column, not in
+  `payload`, so the payload stays exactly the create-request shape and nothing
+  preview-only can reach Meta. One preview per entry (carousel shows one card).
+- **Not compiled in the authoring environment** (no `pom.xml` in the archive and
+  no Maven access); verify with a local build.
+
 ### 2026-09-24 — Aligned with storage-service's API Standard migration
 Both services now speak the same standard; these changes make template ↔
 storage work in every environment, not just dev.
@@ -250,7 +293,7 @@ filters). Contract changes for consumers:
 | K17 | The list path is `/my-templates`; a standard REST collection read would be `GET /api/v1/templates`. Not required by the API Standard; left unchanged. | `ApiPaths.TEMPLATE_LIST` |
 | K11 | The reference SQL sits in `db/migration/` and begins with `drop schema`; if Flyway is ever added it would run automatically. | same |
 | K12 | `application-dev.yaml` datasource default points at `apargo_wa_messaging` (another service's schema). Kept as-is by decision. | `application-dev.yaml` |
-| K13 | Layering exceptions (do not add more): `application` imports `api.request` DTOs (commands wrap `BaseTemplateRequestDto`; validators, `WhatsappTemplateMapper`, `TemplateSyncMapper` read request DTOs; `SyncTemplateRequest` lives in `api.request`); media use case and `FacebookMediaUploadPort` return `api.response.media` types; `application` imports `infrastructure` (`MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR`, `MediaServiceProperties`); `infrastructure` imports `api` (`ApiEnvelope` in `InternalApiAuthFilter`, media DTOs in `FacebookTemplateAdapter`). | various |
+| K13 | Layering exceptions (do not add more): `application` imports `api.request` DTOs (commands wrap `BaseTemplateRequestDto`; validators, `WhatsappTemplateMapper`, `TemplateSyncMapper` read request DTOs; `SyncTemplateRequest` lives in `api.request`); media use case and `FacebookMediaUploadPort` return `api.response.media` types; `application` imports `infrastructure` (`MediaSyncThreadPoolConfig.MEDIA_SYNC_EXECUTOR`, `MediaServiceProperties`); `infrastructure` imports `api` (`ApiEnvelope` in `InternalApiAuthFilter`, media DTOs in `FacebookTemplateAdapter`). Template Library follows the same `application` → `api.request` exception: `SystemTemplatePayload`, `SaveSystemTemplateCommand` and `SystemTemplateDetailResult` reuse `BaseTemplateRequestDto` / `WhatsappTemplateVariablesRequestDto` so the stored and returned shape is exactly the create request. | various |
 | K15 | `WhatsappTemplateVariablesRequestDto.labelValue` allows 500 chars (`@Size(max = 500)`) but the column is `length = 255`; a 256–500 char value passes validation and then fails at insert. | `WhatsappTemplateVariablesRequestDto`, `WhatsappTemplateVariable` |
 | K14 | Only test is `contextLoads`; no unit or integration tests for use cases, validators or adapters. | `src/test` |
 

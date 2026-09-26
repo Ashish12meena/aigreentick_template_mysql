@@ -3,6 +3,7 @@ package com.aigreentick.services.template.domain.service;
 import java.util.List;
 import java.util.Set;
 
+import com.aigreentick.services.template.domain.model.SystemTemplate;
 import com.aigreentick.services.template.domain.model.WhatsappTemplate;
 
 /**
@@ -63,4 +64,10 @@ public interface TemplateCommandService {
 
     void ensureNoDuplicate(String wabaId, String name, String language, Long excludeTemplateId);
 
+    // ── Template Library ──
+
+    SystemTemplate saveSystemTemplate(SystemTemplate systemTemplate);
+
+    /** 409 {@code SYSTEM_TEMPLATE_ALREADY_EXISTS} if another library entry uses this name + language. */
+    void ensureNoDuplicateSystemTemplate(String name, String language, Long excludeId);
 }

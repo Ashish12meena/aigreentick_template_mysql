@@ -86,7 +86,7 @@ The company API Standard is binding; these rules are how this service applies it
 4. MUST put public endpoints under `/api/v1`.
 5. MUST put service-to-service endpoints under `/internal/v1`.
 6. MUST take tenancy from headers (`X-Org-Id`, `X-Project-Id`, `X-Waba-Id`), never from path, query or body.
-7. MUST require `X-Org-Id` and `X-Project-Id` on every business endpoint, and scope every data access by `projectId`.
+7. MUST require `X-Org-Id` and `X-Project-Id` on every business endpoint, and scope every data access by `projectId`. Exception: Template Library (`system_templates`) reads are global; the headers are still required but do not filter.
 8. MUST take the Meta app id from `X-App-Id` (media upload only).
 9. MUST use `X-Request-Id` as the only tracking header. NEVER add `X-Correlation-Id`, `X-Trace-Id` or similar.
 10. MUST validate at the controller (`@Valid`, `@NotNull`, `@Positive`, `@NotBlank`, `@Min`, `@Max`, `@OneOf`).
@@ -117,6 +117,8 @@ The company API Standard is binding; these rules are how this service applies it
 9. MUST use `@Transactional(readOnly = true)` for reads.
 10. MUST put `@Transactional` only on public methods called from another bean.
 11. MUST keep `open-in-view: false`.
+12. NEVER delete a `system_templates` row; set `is_active = 0`. MUST derive its `name`, `language`, `category` from the payload (`SystemTemplateMapper.apply`), never set them separately.
+13. MUST store `system_templates.payload` in the create-request camelCase shape (`JsonHelper.serialize`), never the Meta snake_case payload.
 
 ## 9. Outbound calls
 
