@@ -1,0 +1,37 @@
+package com.apargo.services.template.api.request;
+
+import java.util.List;
+
+import com.apargo.services.template.domain.enums.TemplateCategory;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+/**
+ * Core template definition.
+ *
+ * Meta's own limits (name up to 512 chars, lowercase
+ * [a-z0-9_] naming rule, per-component text limits) are deliberately NOT
+ * enforced here — they are enforced by {@code TemplateValidationService}.
+ */
+@Data
+public class BaseTemplateRequestDto {
+
+    @NotBlank(message = "template name is required")    
+    @Size(max = 150, message = "template name must not exceed 150 characters")
+    private String name;
+
+    @NotBlank(message = "template language is required")
+    @Size(max = 10, message = "template language must not exceed 10 characters")
+    private String language;
+
+    @NotNull(message = "template category is required")
+    private TemplateCategory category;
+
+    @NotEmpty(message = "template must contain at least one component")
+    private List<@Valid @NotNull(message = "component must not be null") WhatsappTemplateComponentRequestDto> components;
+}

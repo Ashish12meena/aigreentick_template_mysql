@@ -1,7 +1,7 @@
 # Template Service — Architecture
 
 Describes the service **as implemented**. If code and this file disagree, the
-code wins and this file must be updated. Last reviewed: 2026-09-24.
+code wins and this file must be updated. Last reviewed: 2026-09-27.
 
 ## 1. What this service is
 
@@ -14,7 +14,7 @@ sending a message).
 | | |
 |---|---|
 | Runtime | Java 21, Spring Boot 3.5.6 (servlet / Spring MVC) |
-| Artifact | `com.aigreentick.services:template` → `spring.application.name: template-service` |
+| Artifact | `com.apargo.services:template` → `spring.application.name: template-service` |
 | Port | `8080` (`SERVER_PORT`) |
 | Database | MySQL, own schema (`apargo_wa_template` by default) via Spring Data JPA / Hibernate |
 | Discovery | Netflix Eureka client (Spring Cloud 2025.0.0) |
@@ -26,7 +26,9 @@ sending a message).
 
 These are **not** used here. Do not assume them when reading or changing the code:
 
-- **Kafka / RabbitMQ / any message broker.** All integration is synchronous HTTP.
+- **RabbitMQ / any other broker, or Kafka for integration.** All integration is
+  synchronous HTTP. Kafka is used for one thing only: publishing audit events
+  (§13), by `AuditEventPublisher`.
 - **Redis / any cache.** Nothing is cached; WABA credentials are fetched per operation.
 - **Spring Security, JWT, OAuth2 resource server.** See §6.
 - **Flyway / Liquibase.** Present in `pom.xml` only as a commented-out dependency.
@@ -67,7 +69,10 @@ These are **not** used here. Do not assume them when reading or changing the cod
 
 ## 3. Code structure (hexagonal / ports-and-adapters)
 
-Root package: `com.aigreentick.services.template`
+Root package: `com.apargo.services.template`. Alongside it,
+`com.apargo.platform.contract` holds the platform event contract
+(`audit/`, `access/`, `event/`, `identity/`): plain DTOs, enums and
+validation, no Spring, imported by any layer that needs them (§13).
 
 ```
 api/                 HTTP boundary
@@ -112,7 +117,8 @@ common ◀── everyone
 ## 4. Request path
 
 ```
-RequestIdFilter            (HIGHEST_PRECEDENCE) X-Request-Id (validated or generated) + org/project/user → MDC; echoes X-Request-Id
+RequestIdFilter            (HIGHEST_PRECEDENCE) X-Request-Id (validated or generated) + org/project/user (+ X-Internal-Caller on /internal) → MDC; echoes X-Request-Id; clears MDC
+ TraceContextFilter        (HIGHEST_PRECEDENCE+1) traceId → MDC: new for public requests, continued from traceparent on /internal
   IdempotencyCachingFilter only POST with X-Idempotency-Key: buffers JSON body and response
     InternalApiAuthFilter  only for /internal/**; constant-time key check → 401 ApiEnvelope (UNAUTHENTICATED)
       IdempotencyInterceptor  only @Idempotent handlers: reserve key / replay stored response / 409
@@ -160,7 +166,8 @@ global naming strategy). Meta payloads are **snake_case** and are handled
 separately (§8).
 
 **Response wrapper** (`ApiEnvelope`, API Standard §4), for every JSON body:
-`{success, status, code, message, data, errors, meta{requestId, timestamp, path?}}`.
+`{success, status, code, message, data, errors, meta{requestId, traceId, timestamp, path?}}`.
+`meta.traceId` is the backend trace id (§13); it is never a response header.
 
 - Built only through `Responses.ok/created/accepted/noContent` (controllers)
   and `ApiEnvelope.error` (handler, filters), which take one `HttpStatus` for
@@ -196,7 +203,8 @@ Swagger UI is disabled by default in `prod` (`SWAGGER_UI_ENABLED`).
 - **Outbound:** `WebClientConfig` attaches `X-Internal-Api-Key`,
   `X-Internal-Caller: template-service`, and passes on `X-Request-Id`,
   `X-Org-Id`, `X-Project-Id`, `X-User-Id` from the MDC (unless the adapter set
-  one explicitly) to waba-service and storage-service calls centrally. Meta receives none of these — only the
+  one explicitly), plus a W3C `traceparent` carrying the trace id with a fresh
+  parent id, to waba-service and storage-service calls centrally. Meta receives none of these — only the
   WABA access token (Bearer, `OAuth` header for resumable upload, or
   `access_token` query param for session start / offset).
 
@@ -330,6 +338,11 @@ system_templates                (standalone; Template Library, not tenant-scoped
 - **MDC is propagated** to the pool by `MdcTaskDecorator`, so background logs
   carry the originating request id (the sync `jobId`) and background calls
   pass on `X-Request-Id` and tenancy headers.
+- **Scheduled jobs** (reconciler, idempotency purge) run inside
+  `ScheduledJobContext.run(jobName, ...)`: a new trace id per run and the job
+  name in the MDC, so their audit events are `SYSTEM / <job name>`.
+- **Audit publishing** has its own pool (`auditPublisherExecutor`, 2 threads,
+  queue 10 000, no caller-runs) so no request thread waits on Kafka (§13).
 - **Idempotency keys** live in `api_idempotency_keys` (org + project + key
   unique). Reserve/complete/release run in their own `REQUIRES_NEW`
   transactions; expired rows are purged hourly (`SchedulingConfig`).
@@ -341,8 +354,92 @@ system_templates                (standalone; Template Library, not tenant-scoped
 - All custom settings bind through `@ConfigurationProperties` classes in
   `infrastructure/config/properties`, registered in `PropertiesRegistrationConfig`:
   `internal.api.*`, `facebook-service.*`, `waba-service.*`, `media-service.*`,
-  `media-sync.*`, `cors.*`, `idempotency.*`.
+  `media-sync.*`, `cors.*`, `idempotency.*`, `template.reconcile.*`, `audit.*`.
+  Kafka is Spring Boot's own `spring.kafka.*`.
 - `prod` requires env for datasource, `INTERNAL_API_KEY`, `CORS_ALLOWED_ORIGINS`,
-  `EUREKA_DEFAULT_ZONE`; uses `ddl-auto: validate`, Hikari leak detection, and
+  `EUREKA_DEFAULT_ZONE`, `KAFKA_BOOTSTRAP_SERVERS`; audit is forced on; uses `ddl-auto: validate`, Hikari leak detection, and
   `server.forward-headers-strategy: framework`.
-- Logs: console pattern includes `req`, `org`, `project`, `user` from the MDC.
+- Logs: console pattern includes `req`, `trace`, `org`, `project`, `user` from the MDC.
+
+## 13. Audit events and tracing
+
+Implements the platform **Audit Events — Producer Guide**. Contract:
+`com.apargo.platform.contract` (in this codebase, see §3; business code
+uses these types and never defines its own event DTOs).
+
+### Flow
+
+```
+use case / service ── TemplateAuditEvents.x(...) ── builds AuditEventDto
+                          │   (context from AuditContextProvider → MdcAuditContextProvider)
+                          ▼
+                 ApplicationEventPublisher.publishEvent(event)
+                          │
+     AuditEventPublisher  @TransactionalEventListener(AFTER_COMMIT, fallbackExecution = true)
+                          │   serialize (camelCase, ISO-8601, nulls omitted) + AuditEventValidator
+                          ▼
+             auditPublisherExecutor ── KafkaTemplate.send(topic, key = eventId, value = JSON,
+                                                         headers eventId/eventType/schemaVersion/
+                                                         sourceService/traceparent)
+```
+
+- Inside a transaction (update draft, delete, bulk delete, library create /
+  update) the event is published after commit and dropped on rollback.
+- Without a transaction (create + Meta submission, submit draft, sync,
+  reconciler) each write has already committed in its own short transaction,
+  so the event is published immediately.
+- Producer: `acks=all`, `enable.idempotence=true`, default retries,
+  `delivery.timeout.ms=120000`, `max.block.ms=10000` (bounds only the audit
+  pool). Anything that still loses an event is logged at ERROR with the
+  `eventId` and full event JSON for replay. `audit.enabled=false` (local only)
+  logs the JSON at DEBUG instead of sending.
+
+### Catalogue (`TemplateAuditEventType`, module `TEMPLATE`)
+
+| Action | eventType | status | entity | changes / metadata |
+|---|---|---|---|---|
+| Create (draft or submit) | `TEMPLATE_CREATED` | SUCCESS | TEMPLATE | `[]`; `wabaId`, `status`, `category`, `language` |
+| Meta accepted, or outcome unknown | `TEMPLATE_SUBMITTED` | SUCCESS | TEMPLATE | status (DRAFT or SUBMITTED → Meta's / SUBMITTED), category, metaTemplateId; `metaOutcome` ACCEPTED / PENDING_RECONCILIATION |
+| Meta rejected | `TEMPLATE_SUBMITTED` | FAILURE | TEMPLATE | status → FAILED, rejectionReason; error `EXTERNAL_SERVICE / META_REJECTED`, Meta's user message |
+| Credentials unavailable (row marked FAILED, caller gets 502) | `TEMPLATE_SUBMITTED` | FAILURE | TEMPLATE | error `EXTERNAL_SERVICE / WABA_CREDENTIALS_UNAVAILABLE` (generic message) |
+| Reconciler gave up | `TEMPLATE_SUBMITTED` | FAILURE | TEMPLATE | status → FAILED; error `EXTERNAL_SERVICE / SUBMISSION_NOT_RECEIVED`; actor SYSTEM |
+| Update draft | `TEMPLATE_UPDATED` | SUCCESS | TEMPLATE | name, language, category, wabaId; `contentReplaced: true` |
+| Delete | `TEMPLATE_DELETED` | SUCCESS | TEMPLATE | `[]`; `metaDeletion` NOT_REQUESTED / NOT_ON_META / DELETED / FAILED |
+| Bulk delete (only when > 0 rows) | `TEMPLATE_BULK_DELETED` | SUCCESS | – | `deletedCount` |
+| Sync / reconciler found a Meta change | `TEMPLATE_APPROVED` / `_REJECTED` / `_PAUSED` / `_DISABLED` / `_STATUS_CHANGED` / `_CATEGORY_CHANGED` / `_UPDATED` | SUCCESS | TEMPLATE | status, category, metaTemplateId, rejectionReason |
+| Sync finished with changes | `TEMPLATE_SYNCED` | SUCCESS | – | `wabaId`, `inserted`, `updated`, `deleted` |
+| Sync failed (caller already got 202) | `TEMPLATE_SYNCED` | FAILURE | – | error from the exception |
+| Library create / update | `SYSTEM_TEMPLATE_CREATED` / `_UPDATED` | SUCCESS | SYSTEM_TEMPLATE | orgId `0`, no projectId; name, language, category, description, sampleMediaUrl, active; `payloadChanged` |
+
+Not audited: reads; 400/422; 404/409 pre-checks (nothing changed); media
+upload (stores nothing here); a sync that changed nothing.
+
+Error mapping (`TemplateAuditEvents.errorFrom`): `ErrorCode` → category
+(`VALIDATION_FAILED`/`BAD_REQUEST` → VALIDATION, `UNAUTHENTICATED` →
+AUTHENTICATION, upstream codes → EXTERNAL_SERVICE, `INTERNAL_ERROR` →
+SYSTEM, everything else → BUSINESS); `code` is the `ErrorCode` name. Only
+BUSINESS / VALIDATION messages are kept; others get a generic message.
+`reference` is the trace id.
+
+### Actor and channel (`MdcAuditContextProvider`)
+
+| MDC holds | actor | channel |
+|---|---|---|
+| `jobName` (scheduled job) | SYSTEM / job name | WORKER |
+| `userId` | USER / user id | WEB (WORKER on a pool thread) |
+| `callerService` (`X-Internal-Caller`, `/internal/**` only) | SERVICE / caller | API (WORKER on a pool thread) |
+| none of these | SERVICE / `unknown` | API (WORKER on a pool thread) |
+
+`ip`, `userAgent`, `actor.name` and `impersonatorId` are null until the
+gateway provides them.
+
+### Trace id
+
+| | `requestId` | `traceId` |
+|---|---|---|
+| Header | `X-Request-Id` (client-facing) | `traceparent` (backend only) |
+| Created by | client, else `RequestIdFilter` | `TraceContextFilter` (new for every public request; continued from a valid `traceparent` on `/internal/**`), or `ScheduledJobContext` per job run |
+| Where | MDC, logs, `X-Request-Id`, `meta.requestId`, events | MDC, logs, `meta.traceId`, outbound `traceparent` to waba/storage, events, Kafka `traceparent` header |
+
+Never sent to Meta. Pool threads get it through `MdcTaskDecorator`.
+

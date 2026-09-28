@@ -27,12 +27,13 @@ templates available to the Messaging Service for sending.
 Library of predefined templates; draft workflow; local
 validation of Meta rules; submission to Meta; pull-sync from Meta including
 re-hosting header media; header-media upload to Meta; read APIs for other
-services.
+services; audit events for every template change (FR-13).
 
 **Out of scope (not implemented here):** sending messages; user
 authentication and authorization; WABA onboarding and credential storage
 (waba-service); media storage (storage-service); webhooks from Meta (status is
-pulled by sync, not pushed); template analytics; audit trail; notifications.
+pulled by sync, not pushed); template analytics; storing or querying the
+audit trail (the audit service does that); notifications.
 
 ## 4. Concepts
 
@@ -213,6 +214,22 @@ Collected in one response with `field`, `code` (`META_*`), `message`:
 - Entries are never deleted; `active: false` hides one. Templates users
   already created from an entry are independent and never change.
 
+### FR-13 Audit events
+- Every template change publishes one audit event per action to Kafka
+  (`platform.audit.events`) following the platform Audit Producer Guide:
+  create, draft update, submit (outcome SUCCESS or FAILURE, e.g. Meta
+  rejection), delete, bulk delete, status/category changes found by sync or
+  the reconciler (APPROVED, REJECTED, PAUSED, ...), sync result, and Template
+  Library create/update. Catalogue and field mapping: `architecture.md` §13.
+- Reads, 400/422 validation errors and pre-check rejections (404, 409) are
+  not audited; they change nothing. Media upload is not audited: it stores
+  nothing here.
+- Published after the database commit and off the request thread; a Kafka
+  outage never slows or fails an API call (events are logged at ERROR for
+  replay instead).
+- Every response carries `meta.traceId`, the backend trace id that also
+  appears in logs and audit events.
+
 ## 6. Business rules
 
 - BR-1 Tenancy: a caller can read and change only templates of the project
@@ -263,7 +280,7 @@ Full endpoint table: `architecture.md` §5.
 | Security | Public API trusts gateway headers; `/internal/**` shared API key (enforced in prod); tokens never stored. |
 | Performance | Page size ≤ 100; sync and media work on a bounded pool (15 threads, queue 100, caller-runs back-pressure); no DB connection held during HTTP calls in sync. |
 | Reliability | Sync and media re-hosting are best-effort and logged; no retries except one resumable-upload resume; per-upstream timeouts (waba 5 s/10 s, storage 5 s/60 s, Meta 10 s/30 s connect/read). |
-| Observability | Actuator health/liveness/readiness, metrics (+ Prometheus in prod); trace/org/project in every log line. |
+| Observability | Actuator health/liveness/readiness, metrics (+ Prometheus in prod); request id, trace id, org, project, user in every log line; `meta.traceId` in every response; audit events to Kafka. |
 | Data | MySQL, soft delete, UTC timestamps; schema managed by Hibernate from entities. |
 | Deployability | Profiles `dev`/`prod`; Eureka registration; graceful shutdown. |
 
@@ -272,5 +289,5 @@ Full endpoint table: `architecture.md` §5.
 - Should sync report its result (job id / status endpoint or callback) instead of only logs?
 - Should update-draft and submit re-run Meta rule validation (today only create does)?
 - Should Meta status changes arrive by webhook rather than manual sync?
-- Is an audit trail required? (`TemplateAuditEventType` exists but is unused.)
+- Should `createdBy` be filled from `X-User-Id` now that the user is recorded on every audit event?
 - Should uploaded media be recorded (`whatsapp_template_media_uploads` is unused)?

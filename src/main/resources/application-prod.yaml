@@ -22,6 +22,10 @@ spring:
       # it a leak presents as the pool slowly exhausting with no attribution.
       leak-detection-threshold: 20000
 
+  # Audit event broker. No default (see file header).
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
   jpa:
     hibernate:
       # NEVER update in production. Hibernate would alter a live schema on
@@ -54,6 +58,11 @@ internal:
     # someone to disable authentication on the internal surface by setting
     # one variable.
     auth-enabled: true
+
+# Audit events are not optional in production: no AUDIT_ENABLED override.
+audit:
+  enabled: true
+  environment: ${AUDIT_ENVIRONMENT:production}
 
 cors:
   # Explicit origins only. The base file's default is a localhost origin, but
@@ -90,6 +99,6 @@ management:
 logging:
   level:
     root: WARN
-    com.aigreentick.services.template: ${LOG_LEVEL:INFO}
+    com.apargo.services.template: ${LOG_LEVEL:INFO}
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-} org=%X{orgId:-} project=%X{projectId:-} user=%X{userId:-}] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-} trace=%X{traceId:-} org=%X{orgId:-} project=%X{projectId:-} user=%X{userId:-}] %logger{36} - %msg%n"

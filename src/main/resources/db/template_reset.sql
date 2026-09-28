@@ -3,7 +3,7 @@
 -- Drops every table owned by the template service, in FK-safe order.
 --
 -- Table list derived from the JPA entities in
---   com.aigreentick.services.template.domain.model
+--   com.apargo.services.template.domain.model
 -- (12 entities, 12 tables) plus infrastructure.idempotency.IdempotencyRecord
 -- (api_idempotency_keys). Order is leaf -> root:
 --

@@ -1,0 +1,21 @@
+package com.apargo.services.template.application.port.out;
+
+
+import java.io.File;
+import java.io.IOException;
+
+import com.apargo.services.template.application.dto.client.FacebookApiResponse;
+import com.apargo.services.template.api.response.media.UploadMediaResponse;
+import com.apargo.services.template.api.response.media.UploadOffsetResponse;
+import com.apargo.services.template.api.response.media.UploadSessionResponse;
+
+public interface FacebookMediaUploadPort {
+
+    FacebookApiResponse<UploadSessionResponse> initiateUploadSession(
+            String fileName, long fileSize, String mimeType, String appId, String accessToken);
+
+    FacebookApiResponse<UploadMediaResponse> uploadResumableMediaToFacebook(
+            String sessionId, File file, String accessToken, String offset) throws IOException;
+
+    UploadOffsetResponse getUploadOffset(String sessionId, String accessToken);
+}

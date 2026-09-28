@@ -1,0 +1,151 @@
+package com.apargo.services.template.domain.service.impl;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.apargo.services.template.common.error.ErrorCode;
+import com.apargo.services.template.common.exception.InvalidTemplateStateException;
+import com.apargo.services.template.common.exception.ResourceNotFoundException;
+import com.apargo.services.template.domain.enums.TemplateCategory;
+import com.apargo.services.template.domain.enums.TemplateStatus;
+import com.apargo.services.template.domain.model.SystemTemplate;
+import com.apargo.services.template.domain.model.WhatsappTemplate;
+import com.apargo.services.template.domain.repository.SystemTemplateQueryRepository;
+import com.apargo.services.template.domain.repository.WhatsappTemplateQueryRepository;
+import com.apargo.services.template.domain.service.TemplateQueryService;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@Transactional(readOnly = true)
+@RequiredArgsConstructor
+public class TemplateQueryServiceImpl implements TemplateQueryService {
+
+    private final WhatsappTemplateQueryRepository queryRepo;
+    private final SystemTemplateQueryRepository systemTemplateQueryRepo;
+
+    @Override
+    public WhatsappTemplate getByIdAndProject(Long id, Long projectId) {
+        return queryRepo.findByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.TEMPLATE_NOT_FOUND, "Template", "id", id));
+    }
+
+    @Override
+    public WhatsappTemplate getByNameLanguageAndWaba(
+            Long projectId, String name, String language, String wabaId) {
+        return queryRepo.findByWabaIdAndNameAndLanguageAndProjectId(
+                wabaId, name, language, projectId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.TEMPLATE_NOT_FOUND,
+                        String.format("Template not found: name='%s' language='%s'", name, language)));
+    }
+
+    @Override
+    public WhatsappTemplate getDraftByIdAndProject(Long id, Long projectId) {
+        WhatsappTemplate template = getByIdAndProject(id, projectId);
+        if (template.getStatus() != TemplateStatus.DRAFT) {
+            throw new InvalidTemplateStateException(
+                    String.format("Template id=%d is not in DRAFT status. Current status: %s",
+                            id, template.getStatus()));
+        }
+        return template;
+    }
+
+    @Override
+    public Page<WhatsappTemplate> listByProject(
+            Long projectId, TemplateStatus status, TemplateCategory category,
+            String search, int page, int size, String sortBy, String sortDir) {
+
+        return queryRepo.findAllByFilters(
+                projectId, status, category, search, PageRequest.of(page, size, stableSort(sortBy, sortDir)));
+    }
+
+    @Override
+    public WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId) {
+        return queryRepo.findDetailByIdAndProjectId(id, projectId)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.TEMPLATE_NOT_FOUND, "Template", "id", id));
+    }
+
+    @Override
+    public boolean existsLive(String wabaId, String name, String language, Long excludeTemplateId) {
+        return queryRepo.existsLiveDuplicate(
+                wabaId, name, language, TemplateStatus.NOT_LIVE, excludeTemplateId);
+    }
+
+    @Override
+    public List<WhatsappTemplate> findStuckSubmitted(Instant cutoff, int limit) {
+        return queryRepo.findSubmittedUpdatedBefore(cutoff, PageRequest.of(0, limit));
+    }
+
+    @Override
+    public Optional<WhatsappTemplate> findLiveWithoutMetaId(String wabaId, String name, String language) {
+        List<WhatsappTemplate> rows = queryRepo.findLiveWithoutMetaId(
+                wabaId, name, language, TemplateStatus.NOT_LIVE);
+        // uk_waba_template_live allows at most one live row per name.
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    @Override
+    public Set<String> findSyncedMetaIds(Long projectId, String wabaId) {
+        return queryRepo.findMetaIdsByProjectAndWabaExcludingDrafts(projectId, wabaId);
+    }
+
+    @Override
+    public List<WhatsappTemplate> findAllByMetaIds(Set<String> metaIds, Long projectId) {
+        if (metaIds == null || metaIds.isEmpty())
+            return List.of();
+        return queryRepo.findAllByMetaTemplateIdInAndProjectId(metaIds, projectId);
+    }
+
+    @Override
+    public long countActiveByProject(Long projectId) {
+        return queryRepo.countByProjectIdAndDeletedAtIsNull(projectId);
+    }
+
+    // ── Template Library ──
+
+    @Override
+    public SystemTemplate getActiveSystemTemplate(Long id) {
+        return systemTemplateQueryRepo.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.SYSTEM_TEMPLATE_NOT_FOUND, "Library template", "id", id));
+    }
+
+    @Override
+    public SystemTemplate getSystemTemplate(Long id) {
+        return systemTemplateQueryRepo.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        ErrorCode.SYSTEM_TEMPLATE_NOT_FOUND, "Library template", "id", id));
+    }
+
+    @Override
+    public Page<SystemTemplate> listActiveSystemTemplates(
+            TemplateCategory category, String language, String search,
+            int page, int size, String sortBy, String sortDir) {
+        return systemTemplateQueryRepo.findActiveByFilters(
+                category, language, search, PageRequest.of(page, size, stableSort(sortBy, sortDir)));
+    }
+
+    @Override
+    public boolean existsSystemTemplate(String name, String language, Long excludeId) {
+        return systemTemplateQueryRepo.existsByNameAndLanguageExcluding(name, language, excludeId);
+    }
+
+    /**
+     * "id" as a tie-breaker gives a stable total order, so rows sharing a sort
+     * value (e.g. the same createdAt) never repeat or vanish between pages.
+     */
+    private static Sort stableSort(String sortBy, String sortDir) {
+        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+        return Sort.by(direction, sortBy).and(Sort.by(direction, "id"));
+    }
+}

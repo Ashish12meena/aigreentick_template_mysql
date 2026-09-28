@@ -12,7 +12,7 @@ MUST = required. NEVER = forbidden. Background lives in `architecture.md`; histo
 6. MUST use Lombok (`@Data`, `@Builder`, `@RequiredArgsConstructor`, `@Slf4j`, `@Getter/@Setter`).
 7. MUST document endpoints with springdoc (`@Tag`, `@Operation`, `@Parameter`, `@ApiResponse`).
 8. MUST use Actuator for health and metrics.
-9. NEVER add Kafka, RabbitMQ or any message broker.
+9. NEVER add a message broker except Kafka for audit events, used only by `AuditEventPublisher` (§14). NEVER add RabbitMQ or another broker, or use Kafka for anything else.
 10. NEVER add Redis or any cache.
 11. NEVER add Spring Security, JWT or OAuth2.
 12. NEVER add Flyway or Liquibase.
@@ -88,7 +88,7 @@ The company API Standard is binding; these rules are how this service applies it
 6. MUST take tenancy from headers (`X-Org-Id`, `X-Project-Id`, `X-Waba-Id`), never from path, query or body.
 7. MUST require `X-Org-Id` and `X-Project-Id` on every business endpoint, and scope every data access by `projectId`. Exception: Template Library (`system_templates`) reads are global; the headers are still required but do not filter.
 8. MUST take the Meta app id from `X-App-Id` (media upload only).
-9. MUST use `X-Request-Id` as the only tracking header. NEVER add `X-Correlation-Id`, `X-Trace-Id` or similar.
+9. MUST use `X-Request-Id` as the only client-facing tracking header. NEVER add `X-Correlation-Id`, `X-Trace-Id` or similar. The W3C `traceparent` is backend-only: accepted on `/internal/**` only, never echoed to clients, never sent to Meta (§14).
 10. MUST validate at the controller (`@Valid`, `@NotNull`, `@Positive`, `@NotBlank`, `@Min`, `@Max`, `@OneOf`).
 11. MUST paginate every list with `page` (from 0, default 0), `size` (1–`TemplateConstants.Defaults.MAX_SIZE`, default 20), `sort` (whitelisted with `@OneOf`) and `order` (`asc`/`desc`), and return `PageResponse` (`{items, pagination}`). NEVER return a Spring `Page` or a bare array.
 12. NEVER put business logic in a controller: log, call the use case, wrap the result.
@@ -99,7 +99,7 @@ The company API Standard is binding; these rules are how this service applies it
 17. MUST give every new error a stable `ErrorCode` with its HTTP status; resource-specific codes use `<RESOURCE>_<PROBLEM>`.
 18. MUST use 400 `BAD_REQUEST` for unreadable bodies or headers and 422 `VALIDATION_FAILED` with `errors[]` for invalid field values.
 19. MUST mark create/send endpoints `@Idempotent`.
-20. MUST take messages from `TemplateConstants.Messages`. NEVER put SQL, stack traces or secrets in `message`.
+20. MUST take messages from `TemplateConstants.Messages` (success), `TemplateConstants.ErrorMessages` (errors) and `TemplateConstants.RejectionReasons` (stored `rejectionReason`). NEVER put SQL, stack traces or secrets in `message`.
 21. NEVER change `GET /api/v1/templates/{templateId}` (path, headers, `TemplateDetailResponseDto`) without agreeing it with the Messaging Service team.
 22. MUST keep `/internal/v1/templates/{templateId}` identical to the public one (same use case, same mapper).
 23. MUST document any response outside the wrapper (e.g. `204`) in the endpoint's `@Operation`.
@@ -153,7 +153,7 @@ The company API Standard is binding; these rules are how this service applies it
 
 1. MUST use `@Slf4j` with `{}` placeholders.
 2. NEVER build log messages by string concatenation.
-3. MUST keep MDC keys in `LogKeys`; `RequestIdFilter` owns the MDC, and every executor MUST use `MdcTaskDecorator`.
+3. MUST keep MDC keys in `LogKeys`. For requests `RequestIdFilter` and `TraceContextFilter` populate the MDC (`RequestIdFilter` clears it); for scheduled jobs `ScheduledJobContext` does; every executor MUST use `MdcTaskDecorator`.
 4. MUST log every lost result on best-effort paths at WARN or ERROR.
 5. NEVER log a token or secret in clear text.
 6. MUST mask tokens with `SecretMasker.mask(...)` and URLs with `SecretMasker.maskUri(...)`.
@@ -165,3 +165,25 @@ The company API Standard is binding; these rules are how this service applies it
 2. MUST write comments that explain why, not change history.
 3. MUST update `prd.md`, `architecture.md` or `rules.md` in the same change that alters behaviour.
 4. MUST add a `memory.md` entry for every behaviour, contract, config, schema or rule change.
+
+## 14. Audit events and tracing
+
+Binding: the platform **Audit Events — Producer Guide**. These rules are how this service applies it.
+
+1. MUST raise an audit event for every business change and every business failure after the request was accepted, through `TemplateAuditEvents` only. NEVER build an `AuditEventDto` anywhere else.
+2. NEVER audit reads, 400/422 validation errors, or pre-checks that change nothing (404, 409).
+3. MUST call `TemplateAuditEvents` after the change is written; inside a `@Transactional` method the event is published only if it commits.
+4. MUST take a `TemplateAuditSnapshot` / `SystemTemplateAuditSnapshot` before mutating an entity whose change is audited.
+5. NEVER put payloads, Meta responses, tokens, secrets, stack traces or upstream messages in an event. Free text is capped at 500 characters.
+6. MUST use the platform contract in `com.apargo.platform.contract` for every event type and enum; NEVER define a second copy of these DTOs elsewhere. The contract stays framework-free (no Spring, no Lombok, no imports from `com.apargo.services.template`). New event types go in `TemplateAuditEventType`, not in the contract.
+7. `AuditEventPublisher` is the only class that uses `KafkaTemplate`. NEVER send to Kafka on a request thread or inside a transaction, and NEVER let a publish failure reach the caller; log it at ERROR with the event JSON.
+8. `AuditContextProvider` is the only source of actor, channel, request id and trace id for events. NEVER read headers or the MDC for them in use cases.
+9. `TraceContextFilter` owns trace id creation for requests; `ScheduledJobContext.run(jobName, ...)` MUST wrap every `@Scheduled` method body; every executor MUST use `MdcTaskDecorator` (§12.3).
+10. MUST configure topic names under `audit.topics.*` and Kafka under `spring.kafka.*`; NEVER hard-code them.
+
+## 15. Constants and configuration (no hard-coding)
+
+1. MUST keep every fixed name in one class under `common/constant`: headers (`ApiHeaders`, `InternalHeaders`), paths (`ApiPaths`), MDC keys (`LogKeys`), response JSON names (`ResponseFields`), Meta Graph paths / params / fields (`MetaGraph`), audit names (`AuditConstants`), job names (`ScheduledJobs`), texts (`TemplateConstants`).
+2. NEVER write a string literal for any of the above in business, adapter or config code; reference the constant.
+3. MUST put every tunable value (URLs, timeouts, sizes, pool sizes, thread-name prefixes, topics, schedules) in `application.yaml` via a `*Properties` class (§11). A Java default on the properties class MUST equal the YAML default.
+4. MUST put cross-cutting helpers in one place and reuse them: cause-chain checks in `ExceptionCauses`, token masking in `SecretMasker`, trace ids in `TraceParent`.

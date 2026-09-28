@@ -19,7 +19,8 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
 | Time is `Instant`, stored in UTC | `DATETIME(6)` UTC; see `rules.md` §6. No `LocalDateTime` anywhere. |
 | Entities are the schema source of truth | Hibernate `ddl-auto` manages tables; no Flyway/Liquibase. `db/migration/V1__initial_schema.sql` is a hand-kept reference only. |
 | YAML defaults stay as they are | Hardcoded `${ENV:default}` fallbacks in `application.yaml` / `application-dev.yaml` are intentionally kept. |
-| No broker, no cache, no Spring Security | Synchronous HTTP only; `/internal/**` guarded by `InternalApiAuthFilter`. |
+| No broker (except audit Kafka), no cache, no Spring Security | Integration is synchronous HTTP only; Kafka carries audit events and nothing else (rules.md §14). `/internal/**` guarded by `InternalApiAuthFilter`. |
+| Audit Producer Guide is binding | Events via `TemplateAuditEvents` only, published after commit by `AuditEventPublisher`; trace id is backend-only (`traceparent`), `X-Request-Id` stays the only client-facing tracking header. |
 | Company API Standard | Headers, wrapper `{success, status, code, message, data, errors, meta}`, status codes, pagination and error format follow the API Standard (adopted 2026-09-24). See rules.md §7. |
 | Messaging read contract | `GET /api/v1/templates/{templateId}` and its `/internal` twin are read by the Messaging Service; path and `TemplateDetailResponseDto` must not change without that team. |
 | Docs location | `src/main/resources/docs/` — `prd.md`, `architecture.md`, `rules.md`, `memory.md`. |
@@ -27,6 +28,99 @@ Keep `architecture.md`, `rules.md` and `prd.md` consistent in the same change.
 ---
 
 ## Change log
+
+### 2026-09-27 — Hard-coded values centralized (no behaviour change)
+- New constant classes in `common/constant`: `AuditConstants` (module, entity
+  types, field / metadata names, audit-only error codes and messages, text
+  cap), `MetaGraph` (Graph API paths, query params, headers, response
+  fields), `ResponseFields` (wrapper JSON names; `ApiEnvelope` property order
+  uses them), `ScheduledJobs` (job names). `TemplateConstants` gained
+  `ErrorMessages` (all `GlobalExceptionHandler` / `ApiErrorController` texts)
+  and `RejectionReasons` (texts stored in `rejectionReason`). All texts are
+  byte-for-byte the previous literals.
+- New helper `common/util/helper/ExceptionCauses.hasTimeout`, now the single
+  timeout check for both the HTTP error mapping and audit errors (the audit
+  copy was looser; both now use the handler's rule).
+- Contract: `EventEnvironments` holds the allowed environment values;
+  `AuditEventValidator` and `AuditProperties` both use it (the property
+  regex is gone).
+- Config instead of code: `waba-service.max-in-memory-size-bytes`
+  (was `1024 * 1024` in `WebClientConfig`), `audit.publisher.thread-name-prefix`.
+  `AuditProperties` defaults reference `InternalHeaders.THIS_SERVICE` and
+  `EventTopics.DEFAULT_AUDIT_TOPIC`.
+- **Fix:** an idempotent replay now reports the replaying request's
+  `meta.traceId` (it kept the original request's trace id).
+- Removed the unused `ComponentFormat` import in `WhatsappTemplateMapper`.
+- rules.md §15 (constants and configuration) and §7.20 updated.
+
+### 2026-09-27 — Root package renamed `com.aigreentick` → `com.apargo`
+- Source tree is now `com/apargo/` with two roots: `com.apargo.services.template`
+  (this service, was `com.aigreentick.services.template`) and
+  `com.apargo.platform.contract` (audit event contract).
+- Every `package` / `import`, Javadoc reference, the logger-level keys in
+  `application*.yaml` (`logging.level.com.apargo.services.template`) and the
+  docs were updated. No behaviour, API, JSON, database or Kafka change.
+- **pom.xml (not in the archive):** set `groupId` to `com.apargo.services`
+  (was `com.aigreentick.services`) and, if declared, the main class to
+  `com.apargo.services.template.TemplateApplication`.
+- Component scanning is rooted at `TemplateApplication`, so it still covers
+  every bean, entity and repository; the contract holds no Spring beans.
+
+### 2026-09-27 — Audit events and backend trace id (Audit Producer Guide)
+Why: the platform audit service needs one event per business action from
+every producer, correlated by a backend-generated trace id.
+- **Contract:** lives in this codebase under `com.apargo.platform.contract`
+  (`src/main/java/com/apargo/platform/contract`, outside the service's
+  own `com.apargo.services.template` tree; same package name as the
+  Producer Guide, so a future shared module replaces it without import changes): `audit/` (`AuditEventDto` +
+  builder, actor/entity/change/error DTOs, enums, `AuditEventValidator`),
+  `access/` (`AccessEventDto` — a proposal, unused here), `event/`
+  (`EventCategory`, `EventSchemaVersion`, `EventTopics`, `EventIds` = UUIDv7),
+  `identity/` (`ActorType`). Plain Java + Jackson annotations, no Spring. The
+  guide's `InternalHeaders.TRACEPARENT` and `LogFields.TRACE_ID` are this
+  service's `InternalHeaders.TRACEPARENT` and `LogKeys.TRACE_ID`.
+- **Trace id:** `TraceContextFilter` (after `RequestIdFilter`) puts a 32-hex
+  `traceId` in the MDC: new for every public request (client `traceparent`
+  ignored), continued from a valid `traceparent` on `/internal/**`. Kept as a
+  request attribute for the `/error` dispatch. New in `meta.traceId` of every
+  response (additive; not a header). Outbound waba/storage calls send
+  `traceparent` (fresh parent id); Meta never gets it. `ScheduledJobContext`
+  gives each scheduled run a new trace id and `jobName` (reconciler:
+  `template-reconciler`, purge: `idempotency-purge`). `MdcTaskDecorator` now
+  also sets `worker=true`. `RequestIdFilter` records `X-Internal-Caller` in the
+  MDC on `/internal/**` only. Log pattern gained `trace=`.
+- **Events:** `TemplateAuditEvents` (application) builds and raises; context
+  from the new port `AuditContextProvider` (`MdcAuditContextProvider`);
+  `AuditEventPublisher` (infrastructure, the only `KafkaTemplate` user) sends
+  after commit on `auditPublisherExecutor`. Catalogue and mapping:
+  architecture.md §13. `TemplateAuditEventType` reshaped (was unused):
+  `TEMPLATE_SYNC_STARTED/COMPLETED/FAILED` → `TEMPLATE_SYNCED` with status;
+  added `TEMPLATE_STATUS_CHANGED`, `SYSTEM_TEMPLATE_CREATED/UPDATED`.
+- **Behaviour changes beyond the events:**
+  - `DELETE /api/v1/templates/{id}` now always reads the row first (to name
+    it in the event); a missing row is still 404 `TEMPLATE_NOT_FOUND`.
+  - `DeleteTemplateUseCase.deleteAllByProject` takes `organizationId` too
+    (recorded on the event, not a filter).
+  - `MetaTemplateSubmissionService.submitToMeta` takes the pre-submit
+    snapshot (old values for the event).
+  - Sync's Meta fetch failure is `ExternalServiceException` (was
+    `IllegalStateException`); background only, still just logged.
+  - Deleting on Meta with a null access token no longer relies on a caught NPE.
+- **Config:** `audit.*` (`AuditProperties`: `enabled`, `source-service`,
+  `environment`, `topics.audit`, `publisher.*`) and `spring.kafka.*`
+  (acks all, idempotence, `delivery.timeout.ms` 120000, `max.block.ms` 10000).
+  Env: `KAFKA_BOOTSTRAP_SERVERS` (required in prod), `AUDIT_ENVIRONMENT`
+  (`development` default, `production` default in prod — **set `staging` on
+  staging**), `AUDIT_ENABLED` (not honoured in prod), `AUDIT_TOPIC`.
+- **Build (pom.xml, not in the archive):** add
+  `org.springframework.kafka:spring-kafka` (version from the Boot BOM). The
+  contract needs nothing extra (Jackson comes with Spring Boot).
+- **Rules:** §1.9 now allows Kafka for audit only; §7.9 clarifies
+  `traceparent` is backend-only; new §14. prd.md FR-13.
+- **Tests:** `TemplateAuditEventsTest`, `MdcAuditContextProviderTest`,
+  `TraceParentTest`, `TraceContextFilterTest` (plain JUnit, no context).
+- **Not compiled in the authoring environment** (no `pom.xml`, no Maven
+  access). Syntax-checked only; build and run the tests locally.
 
 ### 2026-09-26 — Template Library (system templates)
 Why: give users predefined, easy-to-approve templates (Marketing / Utility /
@@ -303,8 +397,6 @@ filters). Contract changes for consumers:
   `WhatsappTemplateMediaServiceImpl`, table `whatsapp_template_media_uploads`
   (the save call in the media use case was removed earlier).
 - `MediaUrlMappingRequestDto`, `MediaLocation` enum.
-- `TemplateAuditEventType` enum.
-- Unused import `ComponentFormat` in `WhatsappTemplateMapper`.
 
 ## Gotchas
 

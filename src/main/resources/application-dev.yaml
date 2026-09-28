@@ -38,5 +38,5 @@ springdoc:
 
 logging:
   level:
-    com.aigreentick.services.template: DEBUG
+    com.apargo.services.template: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE
