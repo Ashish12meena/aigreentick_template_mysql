@@ -188,7 +188,7 @@ audit:
   # development / staging / production
   environment: ${AUDIT_ENVIRONMENT:development}
   topics:
-    audit: ${AUDIT_TOPIC:apargo.audit.event}
+    audit: ${AUDIT_TOPIC:platform.audit.events}
   publisher:
     pool-size: ${AUDIT_PUBLISHER_POOL_SIZE:2}
     queue-capacity: ${AUDIT_PUBLISHER_QUEUE_CAPACITY:10000}
