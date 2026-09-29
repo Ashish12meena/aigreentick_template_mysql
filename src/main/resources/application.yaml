@@ -76,7 +76,7 @@ spring:
   # publisher pool, never on a request thread, so this only bounds that pool.
   # --------------------------------------------------------------------------
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:143.88.24.113:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:146.88.24.113:9092}
     producer:
       client-id: ${KAFKA_CLIENT_ID:${spring.application.name}}
       # acks and enable.idempotence are fixed by the Producer Guide, not tunables.
