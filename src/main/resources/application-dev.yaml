@@ -1,42 +1,13 @@
-
-
 spring:
-  config:
-    import: optional:file:.env[.properties]
-
-  datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://146.88.24.113:3306/apargo_wa_messaging}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:2024@Bajajsys}
+  # .env and ../platform.env are imported by application.yaml for every profile.
 
   jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:true}
 
 internal:
   api:
     api-key: ${INTERNAL_API_KEY:dev-local-internal-key-not-for-any-real-use}
-    auth-enabled: ${INTERNAL_API_AUTH_ENABLED:false}
-
-waba-service:
-  base-url: ${WABA_SERVICE_BASE_URL:http://146.88.24.113:8040}
-
-media-service:
-  base-url: ${MEDIA_SERVICE_BASE_URL:http://146.88.24.113:8030}
-
-eureka:
-  client:
-    enabled: ${EUREKA_ENABLED:true}
-
-cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-
-springdoc:
-  paths-to-match: /api/**, /internal/**
 
 logging:
   level:
-    com.apargo.services.template: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE
+    org.hibernate.orm.jdbc.bind: ${LOG_LEVEL_SQL_BIND:TRACE}

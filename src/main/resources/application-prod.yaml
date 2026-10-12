@@ -11,12 +11,14 @@
 # ============================================================================
 
 spring:
+  # Still no default: DB_URL / SPRING_DATASOURCE_URL, or DB_HOST|MYSQL_HOST + DB_NAME|MYSQL_DATABASE,
+  # must be supplied; credentials as DB_* or SPRING_DATASOURCE_*.
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${DB_URL:${SPRING_DATASOURCE_URL:jdbc:mysql://${DB_HOST:${MYSQL_HOST}}:${DB_PORT:${MYSQL_PORT:3306}}/${DB_NAME:${MYSQL_DATABASE}}}}
+    username: ${DB_USERNAME:${SPRING_DATASOURCE_USERNAME}}
+    password: ${DB_PASSWORD:${SPRING_DATASOURCE_PASSWORD}}
     hikari:
-      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      maximum-pool-size: ${DB_POOL_MAX:${DB_POOL_MAX_SIZE:30}}
       minimum-idle: ${DB_POOL_MIN_IDLE:10}
       # Surfaces a connection that was borrowed and never returned. Without
       # it a leak presents as the pool slowly exhausting with no attribution.
@@ -34,7 +36,7 @@ spring:
       # on a mismatch instead, which is the correct outcome: a schema that
       # does not match the code should stop a deployment, not be edited to fit.
       ddl-auto: validate
-    show-sql: false
+    show-sql: ${JPA_SHOW_SQL:false}
     open-in-view: false
     properties:
       hibernate:
@@ -73,7 +75,7 @@ cors:
 
 eureka:
   client:
-    enabled: true
+    enabled: ${EUREKA_ENABLED:true}
     service-url:
       defaultZone: ${EUREKA_DEFAULT_ZONE}
 
@@ -83,22 +85,22 @@ eureka:
 springdoc:
   paths-to-match: /api/**
   swagger-ui:
-    enabled: ${SWAGGER_UI_ENABLED:false}
+    enabled: ${SWAGGER_ENABLED:${SWAGGER_UI_ENABLED:false}}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: ${MANAGEMENT_ENDPOINTS:health,info,metrics,prometheus}
   endpoint:
     health:
       # Health detail names which upstream is failing. Useful to an operator,
       # and a free dependency map to anyone else who can reach the endpoint.
-      show-details: never
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:never}
 
 logging:
   level:
-    root: WARN
-    com.apargo.services.template: ${LOG_LEVEL:INFO}
+    root: ${LOG_LEVEL_ROOT:WARN}
+    com.apargo.services.template: ${LOG_LEVEL_APP:${LOG_LEVEL:INFO}}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-} trace=%X{traceId:-} org=%X{orgId:-} project=%X{projectId:-} user=%X{userId:-}] %logger{36} - %msg%n"

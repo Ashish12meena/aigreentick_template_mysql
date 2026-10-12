@@ -76,7 +76,7 @@ public class WebClientConfig {
                 .baseUrl(properties.getBaseUrl())
                 .clientConnector(connector(properties.getConnectTimeout(), properties.getReadTimeout()))
                 .codecs(c -> applyCamelCaseCodecs(c, properties.getMaxInMemorySizeBytes()))
-                .filter(internalAuth(internalApi))
+                .filter(internalAuth(outboundKey(properties.getApiKey(), internalApi)))
                 .filter(contextPropagation())
                 .filter(logFailures(WABA_WEB_CLIENT))
                 .build();
@@ -88,7 +88,7 @@ public class WebClientConfig {
                 .baseUrl(properties.getBaseUrl())
                 .clientConnector(connector(properties.getConnectTimeout(), properties.getReadTimeout()))
                 .codecs(c -> applyCamelCaseCodecs(c, properties.getMaxInMemorySizeBytes()))
-                .filter(internalAuth(internalApi))
+                .filter(internalAuth(outboundKey(properties.getApiKey(), internalApi)))
                 .filter(contextPropagation())
                 .filter(logFailures(MEDIA_WEB_CLIENT))
                 .build();
@@ -140,7 +140,16 @@ public class WebClientConfig {
     }
 
     /**
-     * Presents the shared internal key on every call to a sibling service.
+     * The key presented to one sibling service: its own {@code api-key} when
+     * set, otherwise this service's {@code internal.api.api-key} — so a callee
+     * that holds a per-caller key can be matched without touching the others.
+     */
+    private static String outboundKey(String perServiceKey, InternalApiProperties internalApi) {
+        return perServiceKey == null || perServiceKey.isBlank() ? internalApi.getApiKey() : perServiceKey;
+    }
+
+    /**
+     * Presents the internal key on every call to a sibling service.
      *
      * <p>Before this existed the WABA credential adapter sent no key at all.
      * That worked only because waba-service ships
@@ -149,10 +158,10 @@ public class WebClientConfig {
      * create, submit, delete and sync with a 401, surfacing as "credentials
      * not found" rather than as a missing header.
      */
-    private ExchangeFilterFunction internalAuth(InternalApiProperties internalApi) {
+    private ExchangeFilterFunction internalAuth(String apiKey) {
         return (request, next) -> next.exchange(
                 ClientRequest.from(request)
-                        .header(InternalHeaders.API_KEY, internalApi.getApiKey())
+                        .header(InternalHeaders.API_KEY, apiKey)
                         .header(InternalHeaders.CALLER_SERVICE, InternalHeaders.THIS_SERVICE)
                         .build());
     }

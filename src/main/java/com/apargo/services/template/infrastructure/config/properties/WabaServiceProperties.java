@@ -35,6 +35,13 @@ public class WabaServiceProperties {
     @NotBlank
     private String baseUrl;
 
+    /**
+     * Key presented to waba-service in {@code X-Internal-Api-Key}. Blank means
+     * {@code internal.api.api-key} is presented instead, which was the only
+     * behaviour before this property existed.
+     */
+    private String apiKey;
+
     /** TCP connect timeout in milliseconds. */
     @Positive
     private int connectTimeout = 5000;
