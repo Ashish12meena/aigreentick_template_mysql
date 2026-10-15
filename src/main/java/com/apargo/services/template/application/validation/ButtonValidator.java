@@ -23,6 +23,7 @@ public class ButtonValidator {
     private static final int MAX_URL = 2;
     private static final int TEXT_MAX = 25;
     private static final int URL_MAX = 2000;
+    private static final int COPY_CODE_MAX = 15;
     private static final String E164 = "^\\+?[1-9]\\d{1,17}$";
 
     public void validate(BaseTemplateRequestDto template, List<Violation> violations) {
@@ -96,9 +97,13 @@ public class ButtonValidator {
                                 List<Violation> violations) {
         if (b == null || b.getType() == null) return;
 
+        // OTP and COPY_CODE labels are optional: Meta supplies a default.
+        boolean labelOptional = b.getType() == ButtonType.OTP || b.getType() == ButtonType.COPY_CODE;
         if (b.getText() == null || b.getText().isBlank()) {
-            violations.add(Violation.of(field + ".text", "META_BUTTON_TEXT_REQUIRED",
-                    "Button label is required"));
+            if (!labelOptional) {
+                violations.add(Violation.of(field + ".text", "META_BUTTON_TEXT_REQUIRED",
+                        "Button label is required"));
+            }
         } else if (b.getText().length() > TEXT_MAX) {
             violations.add(Violation.of(field + ".text", "META_BUTTON_TEXT_TOO_LONG",
                     "Button label must not exceed " + TEXT_MAX + " characters"));
@@ -107,6 +112,7 @@ public class ButtonValidator {
         switch (b.getType()) {
             case URL -> validateUrl(b, field, violations);
             case PHONE_NUMBER -> validatePhone(b, field, violations);
+            case COPY_CODE -> validateCopyCode(b, field, violations);
             case QUICK_REPLY -> {
                 if (b.getUrl() != null || b.getPhoneNumber() != null) {
                     violations.add(Violation.of(field, "META_QUICK_REPLY_EXTRA_FIELDS",
@@ -142,6 +148,19 @@ public class ButtonValidator {
         } else if (variables == 1 && !Placeholders.endsWithPlaceholder(url)) {
             violations.add(Violation.of(field + ".url", "META_BUTTON_URL_VARIABLE_POSITION",
                     "A URL variable must appear at the end of the url"));
+        }
+    }
+
+    /** Coupon button: one sample code, sent to Meta as a single string. */
+    private void validateCopyCode(WhatsappTemplateButtonRequestDto b, String field,
+                                  List<Violation> violations) {
+        List<String> example = b.getExample();
+        if (example == null || example.size() != 1 || example.get(0) == null || example.get(0).isBlank()) {
+            violations.add(Violation.of(field + ".example", "META_COPY_CODE_EXAMPLE_REQUIRED",
+                    "COPY_CODE button requires exactly one example coupon code"));
+        } else if (example.get(0).length() > COPY_CODE_MAX) {
+            violations.add(Violation.of(field + ".example", "META_COPY_CODE_TOO_LONG",
+                    "Coupon code must not exceed " + COPY_CODE_MAX + " characters"));
         }
     }
 

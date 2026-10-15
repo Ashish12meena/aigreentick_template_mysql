@@ -21,12 +21,23 @@ public interface FacebookTemplatePort {
     FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId, String accessToken);
 
     /**
-     * Deletes a template from Facebook by name.
-     * Facebook deletes ALL languages for the given name in one call.
+     * Edits an existing template ({@code POST /{meta-template-id}}). Meta puts
+     * it back under review; the response is {@code {"success": true}}.
      *
-     * @param templateName the template name (not the meta template ID)
-     * @param wabaId       WhatsApp Business Account ID
-     * @param accessToken  WABA-scoped access token
+     * @param bodyJson {@code components}, plus {@code category} when allowed
      */
-    FacebookApiResponse<JsonNode> deleteTemplate(String templateName, String wabaId, String accessToken);
+    FacebookApiResponse<JsonNode> editTemplate(String metaTemplateId, String bodyJson, String accessToken);
+
+    /**
+     * Deletes one template (one language) from Facebook.
+     * Meta needs both values: by name alone it deletes ALL languages of that
+     * name, so {@code metaTemplateId} ({@code hsm_id}) narrows it to this one.
+     *
+     * @param templateName   the template name
+     * @param metaTemplateId Meta's template id for this language
+     * @param wabaId         WhatsApp Business Account ID
+     * @param accessToken    WABA-scoped access token
+     */
+    FacebookApiResponse<JsonNode> deleteTemplate(String templateName, String metaTemplateId,
+            String wabaId, String accessToken);
 }

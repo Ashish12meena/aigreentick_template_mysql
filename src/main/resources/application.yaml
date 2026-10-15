@@ -79,7 +79,8 @@ spring:
 
   # --------------------------------------------------------------------------
   # Kafka producer - used ONLY by AuditEventPublisher (Audit Producer Guide §2).
-  # Nothing else in this service talks to a broker.
+  # Kafka consumer - used ONLY by TemplateWebhookListener (Meta template
+  # webhooks from webhook-service; see template.webhook-events).
   #
   # acks=all + idempotence: a record the broker acknowledged is not lost or
   # duplicated by a producer retry. retries is left at the client default
@@ -99,6 +100,16 @@ spring:
         enable.idempotence: true
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:120000}
         max.block.ms: ${KAFKA_MAX_BLOCK_MS:10000}
+    # Group id is set per listener (template.webhook-events.group-id).
+    # earliest: a new group must not skip events published before it started.
+    # The container commits after each record; never the client on a timer.
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
 
   servlet:
     multipart:
@@ -188,6 +199,15 @@ template:
     min-age: ${TEMPLATE_RECONCILE_MIN_AGE:PT5M}
     give-up-after: ${TEMPLATE_RECONCILE_GIVE_UP_AFTER:PT30M}
     batch-size: ${TEMPLATE_RECONCILE_BATCH_SIZE:50}
+
+  # Meta template webhooks (status / quality / category) from webhook-service.
+  # TOPIC_TEMPLATE is the same variable webhook-service publishes with.
+  webhook-events:
+    enabled: ${TEMPLATE_WEBHOOK_EVENTS_ENABLED:true}
+    topic: ${TOPIC_TEMPLATE:whatsapp.webhook.template}
+    group-id: ${TEMPLATE_WEBHOOK_EVENTS_GROUP_ID:template-service.webhook-template}
+    retry-attempts: ${TEMPLATE_WEBHOOK_EVENTS_RETRY_ATTEMPTS:6}
+    retry-backoff: ${TEMPLATE_WEBHOOK_EVENTS_RETRY_BACKOFF:PT10S}
 
 idempotency:
   required: ${IDEMPOTENCY_REQUIRED:true}

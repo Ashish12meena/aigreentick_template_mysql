@@ -108,6 +108,7 @@ public class DeleteTemplateUseCaseImpl implements DeleteTemplateUseCase {
 
             FacebookApiResponse<JsonNode> response = ftp.deleteTemplate(
                     template.getName(),
+                    metaTemplateId,
                     template.getWabaId(),
                     credentials.getAccessToken());
 

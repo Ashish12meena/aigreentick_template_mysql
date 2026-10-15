@@ -72,6 +72,12 @@ public interface WhatsappTemplateQueryRepository extends JpaRepository<WhatsappT
         List<WhatsappTemplate> findAllByMetaTemplateIdInAndProjectId(
                         Set<String> metaTemplateIds, Long projectId);
 
+        /**
+         * Every live row for one Meta template, across projects; used by the
+         * Meta webhook consumer, which knows only Meta's id.
+         */
+        List<WhatsappTemplate> findAllByMetaTemplateId(String metaTemplateId);
+
         // ── Counts ──
 
         long countByProjectIdAndDeletedAtIsNull(Long projectId);

@@ -40,6 +40,9 @@ public interface TemplateQueryService {
 
     List<WhatsappTemplate> findAllByMetaIds(Set<String> metaIds, Long projectId);
 
+    /** Rows for one Meta template id in any project; empty for a blank id. */
+    List<WhatsappTemplate> findAllByMetaId(String metaTemplateId);
+
     long countActiveByProject(Long projectId);
 
     WhatsappTemplate getDetailByIdAndProject(Long id, Long projectId);

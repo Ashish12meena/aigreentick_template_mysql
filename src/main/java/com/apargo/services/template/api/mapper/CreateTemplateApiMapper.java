@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import com.apargo.services.template.api.request.CreateTemplateRequestDto;
 import com.apargo.services.template.api.response.TemplateResponseDto;
 import com.apargo.services.template.application.dto.command.CreateTemplateCommand;
+import com.apargo.services.template.application.dto.command.EditTemplateCommand;
 import com.apargo.services.template.application.dto.command.UpdateDraftTemplateCommand;
 import com.apargo.services.template.application.dto.result.TemplateResult;
 
@@ -44,6 +45,17 @@ public class CreateTemplateApiMapper {
                 .templateData(request.getTemplate())
                 .variables(request.getVariables())
                 .wabaId(wabaId)
+                .build();
+    }
+
+    public EditTemplateCommand toEditCommand(
+            CreateTemplateRequestDto request, Long templateId, Long projectId, Long organizationId) {
+        return EditTemplateCommand.builder()
+                .templateId(templateId)
+                .projectId(projectId)
+                .organizationId(organizationId)
+                .templateData(request.getTemplate())
+                .variables(request.getVariables())
                 .build();
     }
 

@@ -165,15 +165,57 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
         }
 
         /**
-         * Deletes a WhatsApp template from Facebook by name.
+         * Edits a template by Meta id. Same error contract as {@link #createTemplate}:
+         * a Meta 4xx/5xx carries its status; no response at all is NO_RESPONSE.
+         */
+        public FacebookApiResponse<JsonNode> editTemplate(String metaTemplateId, String bodyJson, String accessToken) {
+
+                URI uri = UriComponentsBuilder
+                                .fromUriString(properties.getBaseUrl())
+                                .pathSegment(properties.getApiVersion(), metaTemplateId)
+                                .build()
+                                .toUri();
+
+                try {
+                        JsonNode response = webClient
+                                        .post()
+                                        .uri(uri)
+                                        .headers(headers -> headers.setBearerAuth(accessToken))
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(bodyJson)
+                                        .retrieve()
+                                        .onStatus(HttpStatusCode::isError, ClientResponse::createException)
+                                        .bodyToMono(JsonNode.class)
+                                        .block();
+
+                        log.info("Template edit sent to Facebook. META_ID={} Response={}", metaTemplateId, response);
+                        return FacebookApiResponse.success(response, 200);
+
+                } catch (WebClientResponseException ex) {
+                        log.error("Facebook rejected template edit. META_ID={} Status={} Response={}", metaTemplateId,
+                                        ex.getStatusCode().value(), ex.getResponseBodyAsString());
+                        return FacebookApiResponse.error(ex.getResponseBodyAsString(), ex.getStatusCode().value());
+
+                } catch (Exception ex) {
+                        log.error("No response from Facebook while editing template - outcome unknown. META_ID={}",
+                                        metaTemplateId, ex);
+                        return FacebookApiResponse.error(
+                                        "No response from Facebook: " + ex.getMessage(),
+                                        FacebookApiResponse.NO_RESPONSE);
+                }
+        }
+
+        /**
+         * Deletes one WhatsApp template (one language) from Facebook by name + hsm_id.
          */
         public FacebookApiResponse<JsonNode> deleteTemplate(
-                        String templateName, String wabaId, String accessToken) {
+                        String templateName, String metaTemplateId, String wabaId, String accessToken) {
 
                 URI uri = UriComponentsBuilder
                                 .fromUriString(properties.getBaseUrl())
                                 .pathSegment(properties.getApiVersion(), wabaId, MetaGraph.Paths.MESSAGE_TEMPLATES)
                                 .queryParam(MetaGraph.Params.NAME, templateName)
+                                .queryParam(MetaGraph.Params.HSM_ID, metaTemplateId)
                                 .build()
                                 .toUri();
 

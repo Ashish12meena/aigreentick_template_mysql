@@ -107,6 +107,13 @@ public class TemplateQueryServiceImpl implements TemplateQueryService {
     }
 
     @Override
+    public List<WhatsappTemplate> findAllByMetaId(String metaTemplateId) {
+        if (metaTemplateId == null || metaTemplateId.isBlank())
+            return List.of();
+        return queryRepo.findAllByMetaTemplateId(metaTemplateId);
+    }
+
+    @Override
     public long countActiveByProject(Long projectId) {
         return queryRepo.countByProjectIdAndDeletedAtIsNull(projectId);
     }

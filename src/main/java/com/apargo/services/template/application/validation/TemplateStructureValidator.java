@@ -10,6 +10,7 @@ import com.apargo.services.template.api.request.*;
 import com.apargo.services.template.domain.enums.CardComponentType;
 import com.apargo.services.template.domain.enums.ComponentFormat;
 import com.apargo.services.template.domain.enums.ComponentType;
+import com.apargo.services.template.domain.enums.TemplateCategory;
 
 /**
  * Component cardinality, text limits, header media, and carousel shape.
@@ -36,7 +37,7 @@ public class TemplateStructureValidator {
             if (c == null || c.getType() == null) continue;
 
             switch (c.getType()) {
-                case BODY -> validateBody(c, i, violations);
+                case BODY -> validateBody(c, i, template.getCategory(), violations);
                 case HEADER -> validateHeader(c, i, violations);
                 case FOOTER -> validateFooter(c, i, violations);
                 case CAROUSEL -> validateCarousel(c, i, violations);
@@ -79,10 +80,14 @@ public class TemplateStructureValidator {
 
     // ── per-component ──
 
-    private void validateBody(WhatsappTemplateComponentRequestDto c, int i, List<Violation> violations) {
+    private void validateBody(WhatsappTemplateComponentRequestDto c, int i, TemplateCategory category,
+                              List<Violation> violations) {
         String text = c.getText();
 
         if (text == null || text.isBlank()) {
+            if (category == TemplateCategory.AUTHENTICATION) {
+                return;   // Meta generates the body; CategoryValidator forbids custom text
+            }
             violations.add(Violation.of(Violation.componentPath(i, "text"),
                     "META_BODY_TEXT_REQUIRED", "BODY text is required"));
         } else if (text.length() > BODY_MAX) {

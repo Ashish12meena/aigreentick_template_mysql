@@ -5,6 +5,7 @@ import com.apargo.services.template.infrastructure.config.properties.CorsPropert
 import com.apargo.services.template.infrastructure.config.properties.FacebookClientProperties;
 import com.apargo.services.template.infrastructure.config.properties.IdempotencyProperties;
 import com.apargo.services.template.infrastructure.config.properties.TemplateReconcileProperties;
+import com.apargo.services.template.infrastructure.config.properties.TemplateWebhookEventsProperties;
 import com.apargo.services.template.infrastructure.config.properties.InternalApiProperties;
 import com.apargo.services.template.infrastructure.config.properties.MediaServiceProperties;
 import com.apargo.services.template.infrastructure.config.properties.MediaSyncProperties;
@@ -38,6 +39,7 @@ import org.springframework.context.annotation.Configuration;
         InternalApiProperties.class,
         IdempotencyProperties.class,
         TemplateReconcileProperties.class,
+        TemplateWebhookEventsProperties.class,
         AuditProperties.class
 })
 public class PropertiesRegistrationConfig {

@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.apargo.services.template.domain.enums.ButtonType;
 import com.apargo.services.template.domain.enums.OtpType;
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 
 import jakarta.validation.constraints.NotNull;
@@ -33,6 +34,12 @@ public class WhatsappTemplateButtonRequestDto {
 
     private String autofillText;
 
+    /**
+     * A list for every button. A COPY_CODE example may also arrive as a single
+     * string (Meta's own shape, also returned by sync); MetaTemplateJson
+     * writes it back as a string for Meta.
+     */
+    @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
     private List<String> example;
 
     private List<WhatsappTemplateButtonSupportedAppRequestDto> supportedApps;

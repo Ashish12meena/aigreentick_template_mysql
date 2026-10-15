@@ -12,13 +12,17 @@ import com.apargo.services.template.domain.enums.*;
 /**
  * Category-specific rules. AUTHENTICATION is by far the most restrictive and
  * the most commonly violated: Meta generates the body copy itself, allows only
- * OTP buttons, and forbids media headers and custom footers.
+ * OTP buttons, and forbids media headers and custom footers. Its only footer
+ * is a text-less one carrying {@code code_expiration_minutes}.
+ *
+ * <p>Two button types are easy to confuse: {@code OTP} (with {@code otp_type}
+ * COPY_CODE / ONE_TAP / ZERO_TAP) is the AUTHENTICATION button, while
+ * {@code COPY_CODE} is the MARKETING coupon-code button.
  */
 @Component
 public class CategoryValidator {
 
-    private static final Set<ButtonType> OTP_BUTTONS =
-            EnumSet.of(ButtonType.OTP, ButtonType.COPY_CODE);
+    private static final Set<ButtonType> OTP_BUTTONS = EnumSet.of(ButtonType.OTP);
     private static final Set<ButtonType> COMMERCE_BUTTONS =
             EnumSet.of(ButtonType.CATALOG, ButtonType.MPM, ButtonType.SPM);
     private static final int EXPIRY_MIN = 1;
@@ -53,13 +57,11 @@ public class CategoryValidator {
                                 "AUTHENTICATION templates use Meta-generated body copy; "
                                         + "custom text is not allowed"));
                     }
-                    Integer expiry = c.getCodeExpirationMinutes();
-                    if (expiry != null && (expiry < EXPIRY_MIN || expiry > EXPIRY_MAX)) {
+                    if (c.getCodeExpirationMinutes() != null) {
                         violations.add(Violation.of(
                                 Violation.componentPath(i, "codeExpirationMinutes"),
-                                "META_AUTH_EXPIRY_OUT_OF_RANGE",
-                                "codeExpirationMinutes must be between "
-                                        + EXPIRY_MIN + " and " + EXPIRY_MAX));
+                                "META_AUTH_EXPIRY_ON_FOOTER",
+                                "codeExpirationMinutes belongs on the FOOTER component"));
                     }
                 }
                 case HEADER -> {
@@ -69,9 +71,22 @@ public class CategoryValidator {
                                 "AUTHENTICATION templates cannot have a media header"));
                     }
                 }
-                case FOOTER -> violations.add(Violation.of(Violation.componentPath(i, "text"),
-                        "META_AUTH_NO_CUSTOM_FOOTER",
-                        "AUTHENTICATION templates cannot have a custom footer"));
+                case FOOTER -> {
+                    if (c.getText() != null && !c.getText().isBlank()) {
+                        violations.add(Violation.of(Violation.componentPath(i, "text"),
+                                "META_AUTH_NO_CUSTOM_FOOTER",
+                                "AUTHENTICATION templates cannot have a custom footer; "
+                                        + "the footer carries only codeExpirationMinutes"));
+                    }
+                    Integer expiry = c.getCodeExpirationMinutes();
+                    if (expiry != null && (expiry < EXPIRY_MIN || expiry > EXPIRY_MAX)) {
+                        violations.add(Violation.of(
+                                Violation.componentPath(i, "codeExpirationMinutes"),
+                                "META_AUTH_EXPIRY_OUT_OF_RANGE",
+                                "codeExpirationMinutes must be between "
+                                        + EXPIRY_MIN + " and " + EXPIRY_MAX));
+                    }
+                }
                 case CAROUSEL, LIMITED_TIME_OFFER ->
                         violations.add(Violation.of(Violation.componentPath(i, "type"),
                                 "META_AUTH_COMPONENT_NOT_ALLOWED",
@@ -97,6 +112,13 @@ public class CategoryValidator {
                 violations.add(Violation.of(field + ".type",
                         "META_AUTH_BUTTON_TYPE_NOT_ALLOWED",
                         "AUTHENTICATION templates allow only OTP buttons, found " + b.getType()));
+                continue;
+            }
+
+            if (b.getOtpType() == null) {
+                violations.add(Violation.of(field + ".otpType",
+                        "META_AUTH_OTP_TYPE_REQUIRED",
+                        "OTP buttons require otpType (COPY_CODE, ONE_TAP or ZERO_TAP)"));
                 continue;
             }
 
@@ -141,7 +163,8 @@ public class CategoryValidator {
                                  List<Violation> violations) {
 
         forEachButton(components, (i, j, b) -> {
-            if (OTP_BUTTONS.contains(b.getType()) || COMMERCE_BUTTONS.contains(b.getType())) {
+            if (OTP_BUTTONS.contains(b.getType()) || COMMERCE_BUTTONS.contains(b.getType())
+                    || b.getType() == ButtonType.COPY_CODE) {
                 violations.add(Violation.of(
                         Violation.componentPath(i, "buttons[" + j + "].type"),
                         "META_BUTTON_TYPE_NOT_ALLOWED_FOR_UTILITY",

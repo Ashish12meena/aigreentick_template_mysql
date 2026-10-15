@@ -38,6 +38,8 @@ public final class MetaGraph {
         public static final String LANGUAGE = "language";
         public static final String CATEGORY = "category";
         public static final String NAME = "name";
+        /** Meta template id; with {@link #NAME}, limits a delete to that one language. */
+        public static final String HSM_ID = "hsm_id";
         public static final String LIMIT = "limit";
         public static final String AFTER = "after";
         public static final String FILE_NAME = "file_name";
@@ -79,5 +81,36 @@ public final class MetaGraph {
         public static final String ERROR_USER_MSG = "error_user_msg";
         public static final String ERROR_USER_TITLE = "error_user_title";
         public static final String MESSAGE = "message";
+    }
+
+    /**
+     * WhatsApp Business Account webhook: the template {@code field} values and
+     * the keys of their {@code value} object.
+     */
+    public static final class Webhook {
+
+        private Webhook() {
+        }
+
+        public static final String FIELD_STATUS_UPDATE = "message_template_status_update";
+        public static final String FIELD_QUALITY_UPDATE = "message_template_quality_update";
+        public static final String FIELD_CATEGORY_UPDATE = "template_category_update";
+
+        public static final String MESSAGE_TEMPLATE_ID = "message_template_id";
+        public static final String MESSAGE_TEMPLATE_NAME = "message_template_name";
+        public static final String MESSAGE_TEMPLATE_LANGUAGE = "message_template_language";
+        public static final String EVENT = "event";
+        public static final String REASON = "reason";
+        public static final String OTHER_INFO = "other_info";
+        public static final String DESCRIPTION = "description";
+        public static final String NEW_QUALITY_SCORE = "new_quality_score";
+        public static final String NEW_CATEGORY = "new_category";
+
+        /** {@code reason} when there is none. */
+        public static final String REASON_NONE = "NONE";
+        /** Back in service after a pause; recorded as APPROVED. */
+        public static final String EVENT_REINSTATED = "REINSTATED";
+        /** Deleted on Meta (e.g. in WhatsApp Manager). */
+        public static final String EVENT_DELETED = "DELETED";
     }
 }

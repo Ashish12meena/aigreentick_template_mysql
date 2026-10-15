@@ -13,7 +13,7 @@ import com.apargo.services.template.application.audit.TemplateAuditSnapshot;
 import com.apargo.services.template.application.dto.command.UpdateDraftTemplateCommand;
 import com.apargo.services.template.application.dto.result.TemplateResult;
 import com.apargo.services.template.application.mapper.WhatsappTemplateMapper;
-import com.apargo.services.template.common.util.helper.JsonHelper;
+import com.apargo.services.template.common.util.helper.MetaTemplateJson;
 import com.apargo.services.template.domain.model.WhatsappTemplate;
 import com.apargo.services.template.domain.model.WhatsappTemplateComponent;
 import com.apargo.services.template.domain.model.WhatsappTemplateVariable;
@@ -69,7 +69,7 @@ public class UpdateDraftTemplateUseCaseImpl implements UpdateDraftTemplateUseCas
         existing.setWabaId(command.getWabaId());
 
         // Step 3: Re-serialize submission payload
-        String payload = JsonHelper.serializeWithSnakeCase(templateReq);
+        String payload = MetaTemplateJson.write(templateReq);
         existing.setSubmissionPayload(payload);
 
         // Step 4: Clear and replace components (orphanRemoval deletes old ones)

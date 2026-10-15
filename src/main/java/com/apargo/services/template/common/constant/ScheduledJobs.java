@@ -15,4 +15,7 @@ public final class ScheduledJobs {
 
     /** Deletes expired idempotency keys ({@code IdempotencyStore#purgeExpired}). */
     public static final String IDEMPOTENCY_PURGE = "idempotency-purge";
+
+    /** Applies Meta template webhooks from Kafka ({@code TemplateWebhookListener}). */
+    public static final String TEMPLATE_WEBHOOK_CONSUMER = "template-webhook-consumer";
 }

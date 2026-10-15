@@ -56,6 +56,7 @@ public final class TemplateConstants {
         public static final String DRAFT_SAVED = "Draft template saved successfully";
         public static final String TEMPLATE_SUBMITTED = "Template submitted to Meta";
         public static final String DRAFT_UPDATED = "Draft updated successfully";
+        public static final String TEMPLATE_EDITED = "Template edit submitted to Meta for review";
         public static final String TEMPLATES_DELETED = "Templates deleted successfully";
         public static final String MEDIA_UPLOADED = "Media uploaded successfully";
         public static final String SYNC_ACCEPTED = "Template sync started in the background";

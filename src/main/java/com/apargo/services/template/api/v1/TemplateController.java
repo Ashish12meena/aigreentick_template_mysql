@@ -18,6 +18,7 @@ import com.apargo.services.template.application.dto.result.TemplateResult;
 import com.apargo.services.template.application.dto.result.TemplateSummaryResult;
 import com.apargo.services.template.application.port.in.CreateTemplateUseCase;
 import com.apargo.services.template.application.port.in.DeleteTemplateUseCase;
+import com.apargo.services.template.application.port.in.EditTemplateUseCase;
 import com.apargo.services.template.application.port.in.GetTemplateUseCase;
 import com.apargo.services.template.application.port.in.SubmitDraftToMetaUseCase;
 import com.apargo.services.template.application.port.in.SyncTemplateFromFacebookUseCase;
@@ -107,6 +108,7 @@ public class TemplateController {
     private final UpdateDraftTemplateUseCase updateDraftTemplateUseCase;
     private final SubmitDraftToMetaUseCase submitDraftToMetaUseCase;
     private final DeleteTemplateUseCase deleteTemplateUseCase;
+    private final EditTemplateUseCase editTemplateUseCase;
     private final SyncTemplateFromFacebookUseCase syncTemplateUseCase;
     private final WhatsappTemplateMediaUseCase templateMediaUseCase;
 
@@ -310,6 +312,38 @@ public class TemplateController {
                 createTemplateApiMapper.toUpdateCommand(request, templateId, projectId, organizationId, wabaId));
 
         return Responses.ok(TemplateConstants.Messages.DRAFT_UPDATED, createTemplateApiMapper.toResponseDto(result));
+    }
+
+    @PutMapping(value = ApiPaths.TEMPLATE_BY_ID, consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Edit a template on Meta",
+            description = "Edits an APPROVED, REJECTED or PAUSED template on Meta and sends it back for "
+                    + "review (status becomes PENDING). Name and language cannot change; category cannot "
+                    + "change once APPROVED. Meta limits edits of approved templates.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Edit accepted by Meta; data is the updated template"),
+            @ApiResponse(responseCode = "404", description = "TEMPLATE_NOT_FOUND"),
+            @ApiResponse(responseCode = "409", description = "TEMPLATE_INVALID_STATE (not editable in its status)"),
+            @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED, including Meta refusing the edit"),
+            @ApiResponse(responseCode = "502", description = "WABA_CREDENTIALS_UNAVAILABLE or DEPENDENCY_FAILURE")
+    })
+    public ResponseEntity<ApiEnvelope<TemplateResponseDto>> editTemplate(
+            @Parameter(description = "Template identifier", example = "1024", required = true)
+            @PathVariable @NotNull @Positive Long templateId,
+
+            @Parameter(description = "Organization identifier", example = "55", required = true)
+            @RequestHeader(ApiHeaders.ORG_ID) @NotNull @Positive Long organizationId,
+
+            @Parameter(description = "Project identifier", example = "101", required = true)
+            @RequestHeader(ApiHeaders.PROJECT_ID) @NotNull @Positive Long projectId,
+
+            @RequestBody @Valid CreateTemplateRequestDto request) {
+
+        log.info("Edit templateId={} organizationId={} projectId={}", templateId, organizationId, projectId);
+
+        TemplateResult result = editTemplateUseCase.execute(
+                createTemplateApiMapper.toEditCommand(request, templateId, projectId, organizationId));
+
+        return Responses.ok(TemplateConstants.Messages.TEMPLATE_EDITED, createTemplateApiMapper.toResponseDto(result));
     }
 
     @Idempotent

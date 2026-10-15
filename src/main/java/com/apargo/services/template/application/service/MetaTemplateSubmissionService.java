@@ -197,6 +197,11 @@ public class MetaTemplateSubmissionService {
      * start or end of the template.", ...}}. The user message is the useful
      * one; fall back to title, then message, then the raw text.
      */
+    /** The user-facing message from a raw Meta error body (see below). */
+    public static String metaUserMessage(String rawError) {
+        return metaUserMessage(parseJson(rawError), rawError);
+    }
+
     private static String metaUserMessage(JsonNode errorJson, String raw) {
         if (errorJson != null) {
             JsonNode err = errorJson.path(MetaGraph.Fields.ERROR);

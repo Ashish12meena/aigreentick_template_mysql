@@ -12,7 +12,7 @@ import com.apargo.services.template.application.dto.result.TemplateResult;
 import com.apargo.services.template.application.mapper.WhatsappTemplateMapper;
 import com.apargo.services.template.application.service.MetaTemplateSubmissionService;
 import com.apargo.services.template.application.validation.TemplateValidationService;
-import com.apargo.services.template.common.util.helper.JsonHelper;
+import com.apargo.services.template.common.util.helper.MetaTemplateJson;
 import com.apargo.services.template.domain.enums.TemplateStatus;
 import com.apargo.services.template.domain.model.WhatsappTemplate;
 import com.apargo.services.template.domain.service.TemplateCommandService;
@@ -62,7 +62,7 @@ public class CreateTemplateUseCaseImpl implements CreateTemplateUseCase {
                 command.getWabaId(), templateReq.getName(), templateReq.getLanguage(), null);
 
         // Step 2: Build and save - committed when save() returns
-        String payload = JsonHelper.serializeWithSnakeCase(templateReq);
+        String payload = MetaTemplateJson.write(templateReq);
         WhatsappTemplate template = templateMapper.mapToTemplateEntity(
                 payload, command.getProjectId(), command.getOrganizationId(), command);
         template.setStatus(command.isDraft() ? TemplateStatus.DRAFT : TemplateStatus.SUBMITTED);
