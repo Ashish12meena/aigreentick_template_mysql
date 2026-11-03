@@ -275,8 +275,15 @@ public class SyncTemplateFromFacebookUseCaseImpl implements SyncTemplateFromFace
                     log.info("[SYNC] Adopted unresolved templateId={} as metaId={}", adopted.getId(), metaId);
                     continue;
                 }
-                toInsert.add(syncMapper.fromFacebookTemplate(
-                        fbTemplate, projectId, organizationId, wabaId));
+                // One template Meta shapes in a way we cannot store (a card button type we do not
+                // model, say) is skipped, not allowed to fail the whole sync.
+                try {
+                    toInsert.add(syncMapper.fromFacebookTemplate(
+                            fbTemplate, projectId, organizationId, wabaId));
+                } catch (IllegalArgumentException e) {
+                    log.warn("[SYNC] Skipping template metaId={} name={} that could not be mapped: {}",
+                            metaId, fbTemplate.getName(), e.getMessage());
+                }
 
             } else if (existingMetaIds.contains(metaId)) {
                 WhatsappTemplate existing = existingByMetaId.get(metaId);

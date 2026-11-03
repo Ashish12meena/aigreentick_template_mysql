@@ -530,7 +530,9 @@ public class TemplateSyncMapper {
         for (WhatsappTemplateCarouselButtonRequestDto dto : dtos) {
             WhatsappTemplateCarouselButton btn = new WhatsappTemplateCarouselButton();
             btn.setCardComponent(cc);
-            btn.setButtonType(CarouselButtonType.valueOf(dto.getType().name()));
+            // A type a card cannot hold fails this template only: the sync loop skips it.
+            btn.setButtonType(CarouselButtonType.of(dto.getType()).orElseThrow(() ->
+                    new IllegalArgumentException("Unsupported carousel button type: " + dto.getType())));
             btn.setText(dto.getText());
             btn.setUrl(dto.getUrl());
             btn.setPhoneNumber(dto.getPhoneNumber());

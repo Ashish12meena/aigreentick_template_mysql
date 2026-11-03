@@ -194,10 +194,10 @@ CREATE TABLE whatsapp_template_carousel_card_components (
   card_id BIGINT UNSIGNED NOT NULL,
 
   component_type ENUM('HEADER','BODY','BUTTONS') NOT NULL,
-  format ENUM('IMAGE','VIDEO','DOCUMENT') NULL,
+  format ENUM('IMAGE','VIDEO','DOCUMENT','PRODUCT') NULL,
 
   text TEXT NULL,
-  media_handle VARCHAR(2048) NULL,  
+  media_handle VARCHAR(2048) NULL,
   media_url VARCHAR(500) NULL,
 
   created_at DATETIME(6) NOT NULL,
@@ -214,7 +214,7 @@ CREATE TABLE whatsapp_template_carousel_buttons (
 
   card_component_id BIGINT UNSIGNED NOT NULL,
 
-  button_type ENUM('URL','QUICK_REPLY','PHONE_NUMBER') NOT NULL,
+  button_type ENUM('URL','QUICK_REPLY','PHONE_NUMBER','SPM') NOT NULL,
   text VARCHAR(150) NOT NULL,
   url VARCHAR(500) NULL,
   phone_number VARCHAR(30) NULL,

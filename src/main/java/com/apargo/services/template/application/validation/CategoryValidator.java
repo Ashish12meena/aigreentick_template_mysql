@@ -7,6 +7,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 import com.apargo.services.template.api.request.*;
+import com.apargo.services.template.application.validation.support.ProductCarousels;
 import com.apargo.services.template.domain.enums.*;
 
 /**
@@ -178,6 +179,12 @@ public class CategoryValidator {
                 violations.add(Violation.of(Violation.componentPath(i, "type"),
                         "META_LTO_MARKETING_ONLY",
                         "LIMITED_TIME_OFFER is only permitted on MARKETING templates"));
+            }
+            // AUTHENTICATION already refuses every carousel.
+            if (ProductCarousels.isProductCarousel(c)) {
+                violations.add(Violation.of(Violation.componentPath(i, "cards"),
+                        "META_PRODUCT_CAROUSEL_MARKETING_ONLY",
+                        "A product card carousel is only permitted on MARKETING templates"));
             }
         }
     }

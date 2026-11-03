@@ -7,6 +7,9 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 import com.apargo.services.template.api.request.*;
+import com.apargo.services.template.application.validation.support.ProductCarousels;
+import com.apargo.services.template.domain.enums.ButtonType;
+import com.apargo.services.template.domain.enums.CardComponentFormat;
 import com.apargo.services.template.domain.enums.CardComponentType;
 import com.apargo.services.template.domain.enums.ComponentFormat;
 import com.apargo.services.template.domain.enums.ComponentType;
@@ -23,6 +26,8 @@ public class TemplateStructureValidator {
     private static final int FOOTER_MAX = 60;
     private static final int CAROUSEL_MIN_CARDS = 1;
     private static final int CAROUSEL_MAX_CARDS = 10;
+    private static final int PRODUCT_CAROUSEL_CARDS = 2;
+    private static final int CARD_BUTTON_TEXT_MAX = 25;
 
     public void validate(BaseTemplateRequestDto template, List<Violation> violations) {
         List<WhatsappTemplateComponentRequestDto> components = template.getComponents();
@@ -169,9 +174,14 @@ public class TemplateStructureValidator {
                     "A CAROUSEL requires at least " + CAROUSEL_MIN_CARDS + " card"));
             return;
         }
-        if (cards.size() > CAROUSEL_MAX_CARDS) {
-            violations.add(Violation.of(field, "META_CAROUSEL_TOO_MANY_CARDS",
-                    "A CAROUSEL may contain at most " + CAROUSEL_MAX_CARDS + " cards"));
+        if (ProductCarousels.isProductCarousel(c)) {
+            validateProductCarousel(cards, field, violations);
+        } else {
+            if (cards.size() > CAROUSEL_MAX_CARDS) {
+                violations.add(Violation.of(field, "META_CAROUSEL_TOO_MANY_CARDS",
+                        "A CAROUSEL may contain at most " + CAROUSEL_MAX_CARDS + " cards"));
+            }
+            rejectProductButtons(cards, field, violations);
         }
 
         // Meta rejects heterogeneous carousels: every card must share the same
@@ -183,6 +193,98 @@ public class TemplateStructureValidator {
                         "META_CAROUSEL_CARDS_NOT_UNIFORM",
                         "All carousel cards must share the same component structure, "
                                 + "media format and button layout"));
+            }
+        }
+    }
+
+    /**
+     * A product card carousel. Meta's shape: exactly {@value #PRODUCT_CAROUSEL_CARDS} cards on create
+     * (an approved template is then sent with up to ten), each a PRODUCT header and one SPM ("View")
+     * or URL button, no card body. The product itself is chosen per send, so the header carries no
+     * media, text or example.
+     */
+    private void validateProductCarousel(List<WhatsappTemplateCarouselCardRequestDto> cards, String field,
+                                         List<Violation> violations) {
+        if (cards.size() != PRODUCT_CAROUSEL_CARDS) {
+            violations.add(Violation.of(field, "META_PRODUCT_CAROUSEL_TWO_CARDS",
+                    "A product card carousel is created with exactly " + PRODUCT_CAROUSEL_CARDS
+                            + " cards; up to 10 products are chosen when it is sent"));
+        }
+
+        for (int j = 0; j < cards.size(); j++) {
+            WhatsappTemplateCarouselCardRequestDto card = cards.get(j);
+            String cardField = field + "[" + j + "]";
+
+            if (!ProductCarousels.hasProductHeader(card)) {
+                violations.add(Violation.of(cardField, "META_CAROUSEL_MIXED_HEADERS",
+                        "Every card of a product carousel needs a PRODUCT header; "
+                                + "PRODUCT and media cards cannot be mixed"));
+            }
+
+            int buttonComponents = 0;
+            List<WhatsappTemplateCarouseCardComponentRequestDto> components =
+                    card == null || card.getComponents() == null ? List.of() : card.getComponents();
+            for (WhatsappTemplateCarouseCardComponentRequestDto comp : components) {
+                if (comp == null || comp.getType() == null) continue;
+                switch (comp.getType()) {
+                    case BODY -> violations.add(Violation.of(cardField, "META_PRODUCT_CARD_NO_BODY",
+                            "A product card has no body; Meta shows the product's title and price"));
+                    case HEADER -> {
+                        boolean hasMedia = comp.getExample() != null || (comp.getText() != null && !comp.getText().isBlank());
+                        if (comp.getFormat() == CardComponentFormat.PRODUCT && hasMedia) {
+                            violations.add(Violation.of(cardField, "META_PRODUCT_CARD_HEADER_NO_MEDIA",
+                                    "A PRODUCT header carries no text, media or example"));
+                        }
+                    }
+                    case BUTTONS -> {
+                        buttonComponents++;
+                        validateProductCardButtons(comp.getButtons(), cardField, violations);
+                    }
+                }
+            }
+            if (buttonComponents != 1) {
+                violations.add(Violation.of(cardField, "META_PRODUCT_CARD_ONE_BUTTON",
+                        "A product card needs exactly one BUTTONS component with one SPM or URL button"));
+            }
+        }
+    }
+
+    private void validateProductCardButtons(List<WhatsappTemplateCarouselButtonRequestDto> buttons, String cardField,
+                                            List<Violation> violations) {
+        if (buttons == null || buttons.size() != 1) {
+            violations.add(Violation.of(cardField + ".buttons", "META_PRODUCT_CARD_ONE_BUTTON",
+                    "A product card needs exactly one SPM or URL button"));
+            return;
+        }
+        WhatsappTemplateCarouselButtonRequestDto button = buttons.get(0);
+        if (button == null || (button.getType() != ButtonType.SPM && button.getType() != ButtonType.URL)) {
+            violations.add(Violation.of(cardField + ".buttons[0].type", "META_PRODUCT_CARD_BUTTON_TYPE",
+                    "A product card's button is SPM (\"View\") or URL"));
+            return;
+        }
+        // The column is NOT NULL, and Meta labels the button with it.
+        if (button.getText() == null || button.getText().isBlank()) {
+            violations.add(Violation.of(cardField + ".buttons[0].text", "META_BUTTON_TEXT_REQUIRED",
+                    "Button label is required"));
+        } else if (button.getText().length() > CARD_BUTTON_TEXT_MAX) {
+            violations.add(Violation.of(cardField + ".buttons[0].text", "META_BUTTON_TEXT_TOO_LONG",
+                    "Button label must not exceed " + CARD_BUTTON_TEXT_MAX + " characters"));
+        }
+    }
+
+    /** SPM opens a card's product, so it exists only on product cards. */
+    private void rejectProductButtons(List<WhatsappTemplateCarouselCardRequestDto> cards, String field,
+                                      List<Violation> violations) {
+        for (int j = 0; j < cards.size(); j++) {
+            WhatsappTemplateCarouselCardRequestDto card = cards.get(j);
+            if (card == null || card.getComponents() == null) continue;
+            for (WhatsappTemplateCarouseCardComponentRequestDto comp : card.getComponents()) {
+                if (comp == null || comp.getButtons() == null) continue;
+                boolean spm = comp.getButtons().stream().anyMatch(b -> b != null && b.getType() == ButtonType.SPM);
+                if (spm) {
+                    violations.add(Violation.of(field + "[" + j + "]", "META_SPM_PRODUCT_CARD_ONLY",
+                            "An SPM button is only allowed on a product card (PRODUCT header)"));
+                }
             }
         }
     }

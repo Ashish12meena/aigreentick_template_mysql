@@ -251,7 +251,8 @@ public class WhatsappTemplateMapper {
         for (WhatsappTemplateCarouselButtonRequestDto dto : dtos) {
             WhatsappTemplateCarouselButton btn = new WhatsappTemplateCarouselButton();
             btn.setCardComponent(cc);
-            btn.setButtonType(CarouselButtonType.valueOf(dto.getType().name()));
+            btn.setButtonType(CarouselButtonType.of(dto.getType()).orElseThrow(() ->
+                    new IllegalArgumentException("Unsupported carousel button type: " + dto.getType())));
             btn.setText(dto.getText());
             btn.setUrl(dto.getUrl());
             btn.setPhoneNumber(dto.getPhoneNumber());
