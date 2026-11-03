@@ -2,6 +2,7 @@ package com.apargo.services.template.api.advice;
 
 import com.apargo.services.template.api.response.common.ApiEnvelope;
 import com.apargo.services.template.api.response.common.ApiFieldError;
+import com.apargo.services.template.application.audit.TemplateAuditEvents;
 import com.apargo.services.template.common.constant.TemplateConstants;
 import com.apargo.services.template.common.error.ErrorCode;
 import com.apargo.services.template.common.util.helper.ExceptionCauses;
@@ -16,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.MethodParameter;
@@ -44,6 +46,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.reactive.function.client.WebClientException;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.ArrayList;
@@ -70,12 +73,18 @@ import java.util.List;
  *
  * <p>{@code message} never contains stack traces, SQL or secrets: unexpected
  * exceptions are logged in full and answered with a generic text.
+ *
+ * <p>Every 5xx is also audited as {@code API_REQUEST_FAILED}: exception class
+ * and the first frame in our code, never the message (doc 39).
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
     private static final String VALIDATION_MESSAGE = TemplateConstants.ErrorMessages.VALIDATION_FAILED;
+
+    private final TemplateAuditEvents audit;
 
     // ----------------------------------------------------
     // 422 - field validation
@@ -321,8 +330,8 @@ public class GlobalExceptionHandler {
             WhatsappCredentialsNotFoundException ex, HttpServletRequest request) {
 
         log.error("WABA credentials unavailable on {}: {}", request.getRequestURI(), ex.getMessage());
-        return error(timeoutOr(ex.getErrorCode(), ex),
-                TemplateConstants.ErrorMessages.WABA_CREDENTIALS_UNAVAILABLE, request);
+        return failed(timeoutOr(ex.getErrorCode(), ex),
+                TemplateConstants.ErrorMessages.WABA_CREDENTIALS_UNAVAILABLE, request, ex);
     }
 
     /** Every other deliberate error: the exception's {@link ErrorCode} decides the status. */
@@ -336,7 +345,7 @@ public class GlobalExceptionHandler {
         } else {
             log.warn("{} on {}: {}", code, request.getRequestURI(), ex.getMessage());
         }
-        return error(code, ex.getMessage(), request);
+        return failed(code, ex.getMessage(), request, ex);
     }
 
     /** An outbound call failed without an adapter translating it. */
@@ -345,9 +354,9 @@ public class GlobalExceptionHandler {
 
         ErrorCode code = timeoutOr(ErrorCode.DEPENDENCY_FAILURE, ex);
         log.error("Untranslated upstream failure on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
-        return error(code, code == ErrorCode.TIMEOUT
+        return failed(code, code == ErrorCode.TIMEOUT
                 ? TemplateConstants.ErrorMessages.DEPENDENCY_TIMEOUT
-                : TemplateConstants.ErrorMessages.DEPENDENCY_FAILURE, request);
+                : TemplateConstants.ErrorMessages.DEPENDENCY_FAILURE, request, ex);
     }
 
     /**
@@ -370,12 +379,31 @@ public class GlobalExceptionHandler {
         }
 
         log.error("Unhandled exception on {}", request.getRequestURI(), ex);
-        return error(ErrorCode.INTERNAL_ERROR, TemplateConstants.ErrorMessages.UNEXPECTED, request);
+        return failed(ErrorCode.INTERNAL_ERROR, TemplateConstants.ErrorMessages.UNEXPECTED, request, ex);
     }
 
     // ----------------------------------------------------
     // Helpers
     // ----------------------------------------------------
+
+    /**
+     * {@link #error} for a handler that has an exception: a 5xx is also
+     * audited as {@code API_REQUEST_FAILED}, so the cause can be found by the
+     * trace id in the response (doc 39). Auditing never throws.
+     */
+    private ResponseEntity<ApiEnvelope<Void>> failed(ErrorCode code, String message,
+                                                     HttpServletRequest request, Throwable cause) {
+        if (code.httpStatus().is5xxServerError()) {
+            audit.requestFailed(code, request.getMethod(), route(request), code.httpStatus().value(), cause);
+        }
+        return error(code, message, request);
+    }
+
+    /** The matched route pattern, so no id in the path is audited; else the URI. */
+    private static String route(HttpServletRequest request) {
+        Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        return pattern != null ? pattern.toString() : request.getRequestURI();
+    }
 
     private ResponseEntity<ApiEnvelope<Void>> validationFailed(List<ApiFieldError> errors, HttpServletRequest request) {
         return error(ErrorCode.VALIDATION_FAILED, VALIDATION_MESSAGE, errors, request);

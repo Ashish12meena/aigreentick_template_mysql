@@ -42,5 +42,10 @@ public enum TemplateAuditEventType {
 
     // -- Template Library (platform-level, orgId 0) --
     SYSTEM_TEMPLATE_CREATED,
-    SYSTEM_TEMPLATE_UPDATED
+    SYSTEM_TEMPLATE_UPDATED,
+
+    // -- Requests --
+
+    /** Always FAILURE: a request this service answered with a 5xx (doc 39). */
+    API_REQUEST_FAILED
 }

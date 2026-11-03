@@ -1,5 +1,7 @@
 package com.apargo.services.template.application.audit;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -11,6 +13,7 @@ import com.apargo.services.template.application.port.out.AuditContextProvider;
 import com.apargo.services.template.common.constant.AuditConstants;
 import com.apargo.services.template.common.constant.AuditConstants.EntityTypes;
 import com.apargo.services.template.common.constant.AuditConstants.ErrorCodes;
+import com.apargo.services.template.common.constant.AuditConstants.ErrorDetails;
 import com.apargo.services.template.common.constant.AuditConstants.Fields;
 import com.apargo.services.template.common.constant.AuditConstants.Messages;
 import com.apargo.services.template.common.constant.AuditConstants.Metadata;
@@ -241,6 +244,60 @@ public class TemplateAuditEvents {
                 AuditEventStatus.FAILURE, now);
         diffMetaState(b, before, now);
         return b.error(withReference(error, ctx)).build();
+    }
+
+    // ----------------------------------------------------
+    // Requests
+    // ----------------------------------------------------
+
+    /**
+     * A request this service answered with a 5xx. The caller only gets a
+     * generic text; this event says what failed and where, so the cause can
+     * be found from the trace id without the server log (doc 39).
+     *
+     * <p>No request body and no exception message, only class names and the
+     * first frame in our own code. A 5xx is never the caller's fault, so the
+     * category is {@code EXTERNAL_SERVICE} for upstream failures and
+     * {@code SYSTEM} for everything else.
+     *
+     * @param route the matched route pattern when there is one, so ids in the
+     *              path never reach the audit trail
+     */
+    public void requestFailed(ErrorCode code, String method, String route, int httpStatus, Throwable cause) {
+        raise(() -> {
+            AuditContext ctx = contextProvider.current();
+            Long orgId = contextProvider.organizationId();
+
+            Map<String, Object> details = new LinkedHashMap<>();
+            if (cause != null) {
+                Throwable root = FailureOrigin.rootCause(cause);
+                details.put(ErrorDetails.EXCEPTION, capped(cause.getClass().getName()));
+                if (root != cause) {
+                    details.put(ErrorDetails.ROOT_CAUSE, capped(root.getClass().getName()));
+                }
+                String origin = FailureOrigin.origin(cause);
+                if (origin != null) {
+                    details.put(ErrorDetails.ORIGIN, capped(origin));
+                }
+            }
+
+            boolean upstream = categoryOf(code) == AuditErrorCategory.EXTERNAL_SERVICE;
+            AuditErrorDto error = new AuditErrorDto(
+                    upstream ? AuditErrorCategory.EXTERNAL_SERVICE : AuditErrorCategory.SYSTEM,
+                    code.name(),
+                    (upstream ? Messages.UPSTREAM_FAILED : Messages.ACTION_FAILED).formatted(code.name()),
+                    details.isEmpty() ? null : Map.copyOf(details),
+                    ctx.traceId());
+
+            return base(ctx, TemplateAuditEventType.API_REQUEST_FAILED, AuditEventStatus.FAILURE)
+                    .orgId(orgId != null ? orgId : AuditEventDto.PLATFORM_ORG_ID)
+                    .projectId(contextProvider.projectId())
+                    .metadata(Metadata.HTTP_METHOD, method)
+                    .metadata(Metadata.ROUTE, capped(route))
+                    .metadata(Metadata.HTTP_STATUS, httpStatus)
+                    .error(error)
+                    .build();
+        });
     }
 
     /** Context, module, type and status: the part every event shares. */

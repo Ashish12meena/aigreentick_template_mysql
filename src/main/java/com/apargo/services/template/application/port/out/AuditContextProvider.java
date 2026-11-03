@@ -11,4 +11,14 @@ public interface AuditContextProvider {
 
     /** Context of the current thread's request or job. Never throws, never null. */
     AuditContext current();
+
+    /** The request's organization; {@code null} outside a tenant-scoped request. Never throws. */
+    default Long organizationId() {
+        return null;
+    }
+
+    /** The request's project; {@code null} when the request names none. Never throws. */
+    default Long projectId() {
+        return null;
+    }
 }

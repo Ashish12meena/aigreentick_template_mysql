@@ -74,6 +74,24 @@ public final class AuditConstants {
         public static final String INSERTED = "inserted";
         public static final String UPDATED = "updated";
         public static final String DELETED = "deleted";
+        public static final String HTTP_METHOD = "httpMethod";
+        /** The matched route pattern, e.g. {@code /api/v1/templates/{id}}: no ids, no names. */
+        public static final String ROUTE = "route";
+        public static final String HTTP_STATUS = "httpStatus";
+    }
+
+    /** {@code error.details} keys. Class names and one stack frame only, never a message. */
+    public static final class ErrorDetails {
+
+        private ErrorDetails() {
+        }
+
+        /** On a 5xx: the exception's class name. */
+        public static final String EXCEPTION = "exception";
+        /** On a 5xx: the deepest cause's class name, when it differs from {@link #EXCEPTION}. */
+        public static final String ROOT_CAUSE = "rootCause";
+        /** On a 5xx: the first frame in our own code, {@code Class.method(File.java:line)}. */
+        public static final String ORIGIN = "origin";
     }
 
     /**

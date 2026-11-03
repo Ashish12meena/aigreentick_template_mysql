@@ -410,6 +410,7 @@ use case / service ── TemplateAuditEvents.x(...) ── builds AuditEventDto
 | Sync finished with changes | `TEMPLATE_SYNCED` | SUCCESS | – | `wabaId`, `inserted`, `updated`, `deleted` |
 | Sync failed (caller already got 202) | `TEMPLATE_SYNCED` | FAILURE | – | error from the exception |
 | Library create / update | `SYSTEM_TEMPLATE_CREATED` / `_UPDATED` | SUCCESS | SYSTEM_TEMPLATE | orgId `0`, no projectId; name, language, category, description, sampleMediaUrl, active; `payloadChanged` |
+| Any request answered 5xx | `API_REQUEST_FAILED` | FAILURE | — | httpMethod, route (pattern), httpStatus; error.details: exception, rootCause, origin (first own frame); never the exception message (platform doc 39) |
 
 Not audited: reads; 400/422; 404/409 pre-checks (nothing changed); media
 upload (stores nothing here); a sync that changed nothing.

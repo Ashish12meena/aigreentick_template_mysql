@@ -80,6 +80,29 @@ public class MdcAuditContextProvider implements AuditContextProvider {
                 properties.getEnvironment());
     }
 
+    @Override
+    public Long organizationId() {
+        return positiveId(MDC.get(LogKeys.ORG_ID));
+    }
+
+    @Override
+    public Long projectId() {
+        return positiveId(MDC.get(LogKeys.PROJECT_ID));
+    }
+
+    /** The MDC holds the raw header; anything that is not a positive number counts as absent. */
+    private static Long positiveId(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        try {
+            long id = Long.parseLong(value.trim());
+            return id > 0 ? id : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
