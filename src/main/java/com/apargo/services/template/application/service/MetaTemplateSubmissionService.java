@@ -86,6 +86,11 @@ public class MetaTemplateSubmissionService {
                     || credentials.getAccessToken().isBlank()) {
                 throw new WhatsappCredentialsNotFoundException("Access token not found for wabaId: " + wabaId);
             }
+            if (!credentials.usable()) {
+                // A BSP route without its key (doc 47 R4): never sent to Meta instead.
+                throw new WhatsappCredentialsNotFoundException(credentials.getUnavailableReason()
+                        + " (wabaId: " + wabaId + ")");
+            }
         } catch (RuntimeException ex) {
             safeMarkFailed(template, TemplateConstants.RejectionReasons.CREDENTIALS_UNAVAILABLE, null);
             audit.templateSubmitFailed(before, template, ex);
@@ -93,7 +98,7 @@ public class MetaTemplateSubmissionService {
         }
 
         // Step 2: Call Meta. No transaction and no DB connection held here.
-        FacebookApiResponse<JsonNode> fbResponse = ftp.createTemplate(payload, wabaId, credentials.getAccessToken());
+        FacebookApiResponse<JsonNode> fbResponse = ftp.createTemplate(payload, wabaId, credentials);
 
         // Step 3: Record the outcome.
         if (fbResponse == null) {

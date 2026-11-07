@@ -17,7 +17,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import com.apargo.services.template.application.dto.client.AccessTokenIdentifier;
 import com.apargo.services.template.application.dto.client.FacebookApiResponse;
+import com.apargo.services.template.common.exception.WhatsappCredentialsNotFoundException;
+import com.apargo.services.template.infrastructure.client.facebook.endpoint.TemplateEndpoint;
+import com.apargo.services.template.infrastructure.client.facebook.endpoint.TemplateEndpointRegistry;
 import com.apargo.services.template.common.constant.MetaGraph;
 import com.apargo.services.template.api.response.media.UploadMediaResponse;
 import com.apargo.services.template.api.response.media.UploadOffsetResponse;
@@ -39,6 +43,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
 
         private final WebClient webClient;
         private final FacebookClientProperties properties;
+        private final TemplateEndpointRegistry endpoints;
 
         /**
          * The client is built once, centrally, in {@link WebClientConfig} —
@@ -49,9 +54,30 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
          */
         public FacebookTemplateAdapter(
                         @Qualifier(WebClientConfig.FACEBOOK_WEB_CLIENT) WebClient webClient,
-                        FacebookClientProperties properties) {
+                        FacebookClientProperties properties,
+                        TemplateEndpointRegistry endpoints) {
                 this.properties = properties;
                 this.webClient = webClient;
+                this.endpoints = endpoints;
+        }
+
+        /**
+         * The endpoint for create and delete (doc 47 R4): Meta, or the WABA's BSP. A BSP route
+         * without its key, or a provider without an endpoint, fails here — never by going to Meta.
+         */
+        private TemplateEndpoint endpointFor(AccessTokenIdentifier credential, String wabaId) {
+                TemplateEndpoint endpoint = endpoints.find(credential.getProvider())
+                                .orElseThrow(() -> new WhatsappCredentialsNotFoundException(
+                                                "No template endpoint is registered for provider "
+                                                                + credential.getProvider() + " (wabaId=" + wabaId + ")"));
+                if (!credential.usable()) {
+                        throw new WhatsappCredentialsNotFoundException(
+                                        (credential.getUnavailableReason() == null
+                                                        ? "No usable " + endpoint.displayName() + " credential"
+                                                        : credential.getUnavailableReason())
+                                                        + " (wabaId=" + wabaId + ")");
+                }
+                return endpoint;
         }
 
         /**
@@ -72,19 +98,18 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
          * so every Meta 4xx arrived as a "500 Internal Server Error" string and
          * the {@code WebClientResponseException} branch below never ran.
          */
-        public FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId, String accessToken) {
+        public FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId,
+                        AccessTokenIdentifier credential) {
 
-                URI uri = UriComponentsBuilder
-                                .fromUriString(properties.getBaseUrl())
-                                .pathSegment(properties.getApiVersion(), wabaId, MetaGraph.Paths.MESSAGE_TEMPLATES)
-                                .build()
-                                .toUri();
+                TemplateEndpoint endpoint = endpointFor(credential, wabaId);
+                URI uri = endpoint.templatesUri(wabaId).build().toUri();
+                String who = endpoint.displayName();
 
                 try {
                         JsonNode response = webClient
                                         .post()
                                         .uri(uri)
-                                        .headers(headers -> headers.setBearerAuth(accessToken))
+                                        .headers(headers -> endpoint.authenticate(headers, credential))
                                         .contentType(MediaType.APPLICATION_JSON)
                                         .bodyValue(bodyJson)
                                         .retrieve()
@@ -92,19 +117,21 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                         .bodyToMono(JsonNode.class)
                                         .block();
 
-                        log.info("Template sent to Facebook. WABA_ID={} Response={}", wabaId, response);
-                        return FacebookApiResponse.success(response, 200);
+                        log.info("Template sent to {}. provider={} WABA_ID={} Response={}", who,
+                                        endpoint.provider(), wabaId, response);
+                        return FacebookApiResponse.success(endpoint.unwrap(response), 200);
 
                 } catch (WebClientResponseException ex) {
-                        log.error("Facebook rejected template. WABA_ID={} Status={} Response={}", wabaId,
-                                        ex.getStatusCode().value(), ex.getResponseBodyAsString());
+                        log.error("{} rejected template. provider={} WABA_ID={} Status={} Response={}", who,
+                                        endpoint.provider(), wabaId, ex.getStatusCode().value(),
+                                        ex.getResponseBodyAsString());
                         return FacebookApiResponse.error(ex.getResponseBodyAsString(), ex.getStatusCode().value());
 
                 } catch (Exception ex) {
-                        log.error("No response from Facebook while sending template - outcome unknown. WABA_ID={}",
-                                        wabaId, ex);
+                        log.error("No response from {} while sending template - outcome unknown. provider={} WABA_ID={}",
+                                        who, endpoint.provider(), wabaId, ex);
                         return FacebookApiResponse.error(
-                                        "No response from Facebook: " + ex.getMessage(),
+                                        "No response from " + who + ": " + ex.getMessage(),
                                         FacebookApiResponse.NO_RESPONSE);
                 }
         }
@@ -209,13 +236,10 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
          * Deletes one WhatsApp template (one language) from Facebook by name + hsm_id.
          */
         public FacebookApiResponse<JsonNode> deleteTemplate(
-                        String templateName, String metaTemplateId, String wabaId, String accessToken) {
+                        String templateName, String metaTemplateId, String wabaId, AccessTokenIdentifier credential) {
 
-                URI uri = UriComponentsBuilder
-                                .fromUriString(properties.getBaseUrl())
-                                .pathSegment(properties.getApiVersion(), wabaId, MetaGraph.Paths.MESSAGE_TEMPLATES)
-                                .queryParam(MetaGraph.Params.NAME, templateName)
-                                .queryParam(MetaGraph.Params.HSM_ID, metaTemplateId)
+                TemplateEndpoint endpoint = endpointFor(credential, wabaId);
+                URI uri = endpoint.deleteQuery(endpoint.templatesUri(wabaId), templateName, metaTemplateId)
                                 .build()
                                 .toUri();
 
@@ -223,7 +247,7 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                         JsonNode response = webClient
                                         .delete()
                                         .uri(uri)
-                                        .headers(headers -> headers.setBearerAuth(accessToken))
+                                        .headers(headers -> endpoint.authenticate(headers, credential))
                                         .retrieve()
                                         .onStatus(HttpStatusCode::is4xxClientError, r -> r.bodyToMono(String.class)
                                                         .flatMap(errorBody -> {
@@ -244,9 +268,9 @@ public class FacebookTemplateAdapter  implements FacebookTemplatePort, FacebookT
                                         .bodyToMono(JsonNode.class)
                                         .block();
 
-                        log.info("Template deleted from Facebook. WABA_ID={} name={} Response={}", wabaId, templateName,
-                                        response);
-                        return FacebookApiResponse.success(response, 200);
+                        log.info("Template deleted from {}. provider={} WABA_ID={} name={} Response={}",
+                                        endpoint.displayName(), endpoint.provider(), wabaId, templateName, response);
+                        return FacebookApiResponse.success(endpoint.unwrap(response), 200);
 
                 } catch (WebClientResponseException ex) {
                         log.error("Failed to delete template from Facebook. WABA_ID={} name={} Status={}",

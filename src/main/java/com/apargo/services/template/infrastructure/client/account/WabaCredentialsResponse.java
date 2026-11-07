@@ -41,4 +41,34 @@ public class WabaCredentialsResponse {
 
     /** Decrypted Meta access token. Treat as a secret; never log it. */
     private String accessToken;
+
+    /** META_DIRECT or a BSP code such as PINNACLE (waba R1, doc 47). Absent from older waba builds. */
+    private String provider;
+
+    /** The BSP credential, for a BSP WABA whose credential is usable. */
+    private BspPart bsp;
+
+    /** Why a BSP WABA has no usable {@link #bsp}. */
+    private String bspUnavailableReason;
+
+    /** The BSP part; {@code apiKey} is a secret. */
+    @Getter
+    @Setter
+    public static class BspPart {
+        private Long credentialId;
+        private String accountId;
+        private String apiKey;
+        private String status;
+
+        @Override
+        public String toString() {
+            return "BspPart(credentialId=" + credentialId + ", status=" + status + ", apiKey=***)";
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "WabaCredentialsResponse(wabaId=" + wabaId + ", provider=" + provider
+                + ", bsp=" + (bsp == null ? "absent" : "present") + ", accessToken=***)";
+    }
 }

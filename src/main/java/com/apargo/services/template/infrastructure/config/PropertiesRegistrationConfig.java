@@ -1,5 +1,6 @@
 package com.apargo.services.template.infrastructure.config;
 
+import com.apargo.services.template.infrastructure.config.properties.TemplateProviderProperties;
 import com.apargo.services.template.infrastructure.config.properties.AuditProperties;
 import com.apargo.services.template.infrastructure.config.properties.CorsProperties;
 import com.apargo.services.template.infrastructure.config.properties.FacebookClientProperties;
@@ -40,7 +41,8 @@ import org.springframework.context.annotation.Configuration;
         IdempotencyProperties.class,
         TemplateReconcileProperties.class,
         TemplateWebhookEventsProperties.class,
-        AuditProperties.class
+        AuditProperties.class,
+        TemplateProviderProperties.class
 })
 public class PropertiesRegistrationConfig {
 }

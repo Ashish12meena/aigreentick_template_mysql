@@ -1,6 +1,7 @@
 package com.apargo.services.template.application.port.out;
 
 
+import com.apargo.services.template.application.dto.client.AccessTokenIdentifier;
 import com.apargo.services.template.application.dto.client.FacebookApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -15,10 +16,10 @@ public interface FacebookTemplatePort {
      *
      * @param bodyJson     serialized JSON payload (snake_case, Facebook format)
      * @param wabaId       WhatsApp Business Account ID
-     * @param accessToken  WABA-scoped access token
-     * @return raw Facebook response wrapped in a result type
+     * @param credential   the routed credential: Meta, or the WABA's BSP (doc 47 R4)
+     * @return raw response wrapped in a result type, in Meta's shape
      */
-    FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId, String accessToken);
+    FacebookApiResponse<JsonNode> createTemplate(String bodyJson, String wabaId, AccessTokenIdentifier credential);
 
     /**
      * Edits an existing template ({@code POST /{meta-template-id}}). Meta puts
@@ -36,8 +37,8 @@ public interface FacebookTemplatePort {
      * @param templateName   the template name
      * @param metaTemplateId Meta's template id for this language
      * @param wabaId         WhatsApp Business Account ID
-     * @param accessToken    WABA-scoped access token
+     * @param credential     the routed credential: Meta, or the WABA's BSP (doc 47 R4)
      */
     FacebookApiResponse<JsonNode> deleteTemplate(String templateName, String metaTemplateId,
-            String wabaId, String accessToken);
+            String wabaId, AccessTokenIdentifier credential);
 }

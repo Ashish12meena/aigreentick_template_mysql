@@ -105,12 +105,18 @@ public class DeleteTemplateUseCaseImpl implements DeleteTemplateUseCase {
                         template.getWabaId());
                 return MetaDeletion.FAILED;
             }
+            if (!credentials.usable()) {
+                // A BSP route without its key (doc 47 R4): never deleted through Meta instead.
+                log.warn("No usable {} credential for wabaId={}: {}; skipping deletion",
+                        credentials.getProvider(), template.getWabaId(), credentials.getUnavailableReason());
+                return MetaDeletion.FAILED;
+            }
 
             FacebookApiResponse<JsonNode> response = ftp.deleteTemplate(
                     template.getName(),
                     metaTemplateId,
                     template.getWabaId(),
-                    credentials.getAccessToken());
+                    credentials);
 
             if (response.isSuccess()) {
                 log.info("Template deleted from Meta: name={} metaId={}",

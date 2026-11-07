@@ -192,6 +192,17 @@ media-sync:
 # Settles templates left SUBMITTED when Meta's outcome could not be recorded
 # (timeout, Meta 5xx, crash after Meta accepted). See SubmittedTemplateReconciler.
 template:
+  # BSP template routing (doc 47 R4). waba-service names each WABA's provider; an enabled BSP here
+  # gets that WABA's template create and delete. Sync, edit and header samples always use Meta.
+  # Off (the default) = Pinnacle WABAs' templates go through Meta exactly as before, so
+  # PINNACLE_TEMPLATE_ENABLED=false is the rollback. A new BSP is a new block plus one TemplateEndpoint.
+  providers:
+    pinnacle:
+      enabled: ${PINNACLE_TEMPLATE_ENABLED:false}
+      # Comma-separated Meta WABA ids. Empty = every Pinnacle WABA (once enabled).
+      waba-allowlist: ${PINNACLE_TEMPLATE_WABA_ALLOWLIST:}
+      base-url: ${PINNACLE_PARTNER_BASE_URL:https://partnersv1.pinbot.ai}
+      api-version: v3
   reconcile:
     enabled: ${TEMPLATE_RECONCILE_ENABLED:false}
     interval: ${TEMPLATE_RECONCILE_INTERVAL:PT5M}

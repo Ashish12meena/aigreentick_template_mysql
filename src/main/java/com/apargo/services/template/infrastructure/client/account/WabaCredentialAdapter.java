@@ -54,24 +54,28 @@ public class WabaCredentialAdapter implements WabaCredentialPort {
     private final WebClient webClient;
     private final WabaServiceProperties properties;
     private final WabaCredentialsMapper mapper;
+    private final TemplateRoutePolicy routePolicy;
 
     public WabaCredentialAdapter(
             @Qualifier(WebClientConfig.WABA_WEB_CLIENT) WebClient webClient,
             WabaServiceProperties properties,
-            WabaCredentialsMapper mapper) {
+            WabaCredentialsMapper mapper,
+            TemplateRoutePolicy routePolicy) {
         this.webClient = webClient;
         this.properties = properties;
         this.mapper = mapper;
+        this.routePolicy = routePolicy;
     }
 
+    /** The Meta token plus the route for template create and delete (doc 47 R4). */
     @Override
     public AccessTokenIdentifier getWhatsappAccountWabaAccessToken(String wabaId, TenantScope tenant) {
-        return new AccessTokenIdentifier(fetchCredentials(wabaId, tenant).getAccessToken());
+        return routePolicy.route(wabaId, fetchResponse(wabaId, tenant));
     }
 
     @Override
     public WhatsappAccountCredentials getWhatsappAccountAppAccessToken(String wabaId, TenantScope tenant) {
-        return fetchCredentials(wabaId, tenant);
+        return mapper.toWhatsappAccountCredentials(fetchResponse(wabaId, tenant));
     }
 
     /**
@@ -84,7 +88,7 @@ public class WabaCredentialAdapter implements WabaCredentialPort {
      * sent at all, which worked only because waba-service ships with
      * authentication disabled in its dev profile.
      */
-    private WhatsappAccountCredentials fetchCredentials(String wabaId, TenantScope tenant) {
+    private WabaCredentialsResponse fetchResponse(String wabaId, TenantScope tenant) {
         log.debug("Resolving WABA credentials wabaId={} organizationId={} projectId={}",
                 wabaId, tenant.organizationId(), tenant.projectId());
 
@@ -120,8 +124,8 @@ public class WabaCredentialAdapter implements WabaCredentialPort {
                         "waba-service returned no usable access token for wabaId=" + wabaId);
             }
 
-            log.debug("Resolved WABA credentials wabaId={}", wabaId);
-            return mapper.toWhatsappAccountCredentials(response);
+            log.debug("Resolved WABA credentials wabaId={} provider={}", wabaId, response.getProvider());
+            return response;
 
         } catch (WhatsappCredentialsNotFoundException ex) {
             // Already carries the upstream status and body - do not re-wrap.
