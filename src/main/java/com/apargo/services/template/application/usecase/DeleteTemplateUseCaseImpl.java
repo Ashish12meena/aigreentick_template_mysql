@@ -119,8 +119,8 @@ public class DeleteTemplateUseCaseImpl implements DeleteTemplateUseCase {
                     credentials);
 
             if (response.isSuccess()) {
-                log.info("Template deleted from Meta: name={} metaId={}",
-                        template.getName(), metaTemplateId);
+                log.info("Template deleted on the provider: provider={} name={} metaId={}",
+                        credentials.getProvider(), template.getName(), metaTemplateId);
                 return MetaDeletion.DELETED;
             }
             log.warn("Failed to delete template from Meta: name={} error={}",
